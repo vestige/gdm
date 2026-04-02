@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GDM</title>
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body id="appBody" class="min-h-screen text-slate-800 bg-sky-soft transition-colors duration-700">
+    <main class="max-w-6xl mx-auto px-4 py-8">
+      <header class="text-center mb-8 animate-float-up">
+        <p id="todayLabel" class="text-sm md:text-base text-slate-500 mb-2"></p>
+        <h1 class="text-3xl md:text-5xl font-bold tracking-tight">
+        <span class="shine-text">おはようございます</span> <span>☀️</span>
+        </h1>
+        <p class="mt-3 text-slate-600">
+          今日を少し楽しく始める、朝の社内アプリ
+        </p>
+      </header>
+
+      <section class="max-w-xl mx-auto mb-6 rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+        <h2 class="text-xl font-bold mb-3">名前で少し変化</h2>
+        <form id="nameForm" class="space-y-4">
+          <input
+            id="nameInput"
+            type="text"
+            placeholder="名前を入れてみる"
+            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-300"
+          />
+          <button
+            type="submit"
+            id="drawBtn"
+            class="w-full rounded-2xl bg-indigo-600 text-white px-5 py-3 font-semibold shadow-lg hover:scale-[1.01] active:scale-95 transition"
+          >
+            送信して今日の内容を見る
+          </button>
+        </form>
+      </section>
+
+      <section id="resultSection" class="hidden grid gap-6 lg:grid-cols-3">
+        <div class="lg:col-span-1 space-y-6">
+          <section
+            id="fortuneCard"
+            class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up animate-glow-soft"
+          >
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-xl font-bold">今日の運勢</h2>
+              <span class="text-2xl animate-drift">✨</span>
+            </div>
+
+            <p id="fortuneRank" class="text-4xl font-extrabold text-indigo-600 mb-3">---</p>
+            <p id="fortuneMessage" class="text-slate-700 leading-relaxed mb-5"></p>
+
+            <div class="grid gap-3">
+              <div class="rounded-2xl bg-slate-50 p-4">
+                <p class="text-sm text-slate-500">ラッキーカラー</p>
+                <p id="luckyColor" class="text-lg font-semibold">---</p>
+              </div>
+              <div class="rounded-2xl bg-slate-50 p-4">
+                <p class="text-sm text-slate-500">ラッキーアクション</p>
+                <p id="luckyAction" class="text-lg font-semibold">---</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="lg:col-span-1 space-y-6">
+          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+            <h2 class="text-xl font-bold mb-3">今日の名言</h2>
+            <p id="quoteText" class="leading-relaxed text-slate-700 text-base md:text-lg"></p>
+          </section>
+
+          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+            <h2 class="text-xl font-bold mb-3">今日のうんちく</h2>
+            <p id="triviaText" class="leading-relaxed text-slate-700 text-base md:text-lg"></p>
+          </section>
+        </div>
+
+        <div class="lg:col-span-1 space-y-6">
+          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-xl font-bold">今日の天気</h2>
+              <span id="weatherEmoji" class="text-3xl animate-drift">⛅</span>
+            </div>
+
+            <p id="weatherStatus" class="text-slate-600 mb-4">天気を取得中です...</p>
+
+            <div class="grid gap-3">
+              <div class="rounded-2xl bg-slate-50 p-4">
+                <p class="text-sm text-slate-500">いまの気温</p>
+                <p id="currentTemp" class="text-lg font-semibold">---</p>
+              </div>
+
+              <div class="rounded-2xl bg-slate-50 p-4">
+                <p class="text-sm text-slate-500">帰る時間の気温（18:00目安）</p>
+                <p id="eveningTemp" class="text-lg font-semibold">---</p>
+              </div>
+
+              <div class="rounded-2xl bg-slate-50 p-4">
+                <p class="text-sm text-slate-500">帰る時間の降水確率</p>
+                <p id="eveningRain" class="text-lg font-semibold">---</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+            <h2 class="text-xl font-bold mb-3">帰りのひとこと</h2>
+            <p id="weatherComment" class="leading-relaxed text-slate-700">
+              読み込み中...
+            </p>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
