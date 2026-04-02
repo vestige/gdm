@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@keyframes floatUp {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes glowSoft {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 255, 255, 0);
+  }
+  50% {
+    box-shadow: 0 10px 30px rgba(255, 255, 255, 0.12);
+  }
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes shine {
+  0% {
+    background-position: 200% center;
+  }
+  100% {
+    background-position: -200% center;
+  }
+}
+
+.animate-float-up {
+  animation: floatUp 0.7s ease-out forwards;
+}
+
+.animate-glow-soft {
+  animation: glowSoft 2.8s ease-in-out infinite;
+}
+
+.animate-drift {
+  animation: drift 3s ease-in-out infinite;
+}
+
+.shine-text {
+  background: linear-gradient(90deg, #1e293b 0%, #334155 20%, #6366f1 50%, #334155 80%, #1e293b 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 6s linear infinite;
+}
+
+.bg-weather-sunny {
+  background-color: #fef9c3;
+  background-image: linear-gradient(140deg, #fff7d6 0%, #fffce8 60%, #fef9c3 100%);
+}
+
+.bg-weather-cloudy {
+  background-color: #f3f4f6;
+  background-image: linear-gradient(140deg, #f8fafc 0%, #eef2f7 60%, #e5e7eb 100%);
+}
+
+.bg-weather-rainy {
+  background-color: #dbeafe;
+  background-image: linear-gradient(140deg, #e8f2ff 0%, #dbeafe 55%, #c7dcff 100%);
+}
+
+.bg-sky-soft {
+  background-color: #e0f2fe;
+  background-image: linear-gradient(140deg, #e0f2fe 0%, #ecfeff 55%, #dbeafe 100%);
+}

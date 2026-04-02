@@ -1,0 +1,26 @@
+{
+  "name": "gdm",
+  "version": "1.0.0",
+  "description": "Morning internal app with Vite + Tailwind",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vestige/gdm.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/vestige/gdm/issues"
+  },
+  "homepage": "https://github.com/vestige/gdm#readme",
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.2",
+    "tailwindcss": "^4.2.2",
+    "vite": "^8.0.3"
+  }
+}
