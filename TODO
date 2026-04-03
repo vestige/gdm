@@ -1,0 +1,9 @@
+- [x] 今の場所を選択できるようにする（東京、栃木）
+- [ ] 天気は Open-Meteo
+- [ ] 豆知識は uselessfacts
+- [ ] 今日は何の日は Wikimedia
+- [ ] 名言は serverless 経由で ZenQuotes
+
+
+### memo
+> npm run dev
