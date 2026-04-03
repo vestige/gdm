@@ -1,7 +1,7 @@
 - [x] 今の場所を選択できるようにする（東京、栃木）
 - [x] 場所の選択のデフォルトはキャッシュできる？
 - [x] 天気は Open-Meteo
-- [ ] 豆知識は uselessfacts
+- [x] 豆知識は uselessfacts
 - [ ] 今日は何の日は Wikimedia
 - [ ] 名言は serverless 経由で ZenQuotes
 
