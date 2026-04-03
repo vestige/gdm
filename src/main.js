@@ -15,6 +15,9 @@ const locations = {
 };
 let selectedLocationKey = "tochigi";
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
+const USELESS_FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en";
+const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
+let latestTriviaText = "";
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
@@ -79,16 +82,60 @@ function drawFortune() {
   const color = pickBySeed(luckyColors, seed, 3);
   const action = pickBySeed(luckyActions, seed, 5);
   const quote = pickBySeed(quotes, seed, 7);
-  const info = pickBySeed(trivia, seed, 11);
 
   document.getElementById("fortuneRank").textContent = fortune.rank;
   document.getElementById("fortuneMessage").textContent = fortune.message;
   document.getElementById("luckyColor").textContent = color;
   document.getElementById("luckyAction").textContent = action;
   document.getElementById("quoteText").textContent = quote;
-  document.getElementById("triviaText").textContent = info;
+  document.getElementById("triviaText").textContent = latestTriviaText || "豆知識を取得中です...";
 
   replayCardAnimation(document.getElementById("fortuneCard"));
+}
+
+async function loadUselessFact() {
+  const triviaText = document.getElementById("triviaText");
+  triviaText.textContent = "豆知識を取得中です...";
+
+  try {
+    const response = await fetch(USELESS_FACTS_API_URL);
+    if (!response.ok) {
+      throw new Error(`uselessfacts APIエラー: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const factText = typeof data?.text === "string" ? data.text.trim() : "";
+    if (!factText) {
+      throw new Error("uselessfacts のレスポンスに text がありません");
+    }
+
+    let translatedFactText = factText;
+    try {
+      const translateUrl =
+        `${TRANSLATE_API_BASE_URL}?q=${encodeURIComponent(factText)}` +
+        "&langpair=en|ja";
+      const translateResponse = await fetch(translateUrl);
+      if (translateResponse.ok) {
+        const translateData = await translateResponse.json();
+        const translatedText = typeof translateData?.responseData?.translatedText === "string"
+          ? translateData.responseData.translatedText.trim()
+          : "";
+        if (translatedText) {
+          translatedFactText = translatedText;
+        }
+      }
+    } catch (translateError) {
+      console.warn("豆知識の翻訳に失敗しました。英語原文で表示します。", translateError);
+    }
+
+    latestTriviaText = translatedFactText;
+    triviaText.textContent = latestTriviaText;
+  } catch (error) {
+    console.error(error);
+    const fallback = pickBySeed(trivia, getTodaySeed(document.getElementById("nameInput").value), 11);
+    latestTriviaText = fallback;
+    triviaText.textContent = fallback;
+  }
 }
 
 function weatherCodeToEmoji(code) {
@@ -248,6 +295,7 @@ function setupEvents() {
     event.preventDefault();
     drawFortune();
     revealResults();
+    loadUselessFact();
   });
 
   locationSelect.addEventListener("change", (event) => {
@@ -265,6 +313,7 @@ function setupEvents() {
       event.preventDefault();
       drawFortune();
       revealResults();
+      loadUselessFact();
     }
   });
 }
@@ -281,6 +330,7 @@ function init() {
   setTodayLabel();
   setupEvents();
   loadWeather();
+  loadUselessFact();
 }
 
 init();
