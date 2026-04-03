@@ -21,6 +21,16 @@
       <section class="max-w-xl mx-auto mb-6 rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
         <h2 class="text-xl font-bold mb-3">名前で少し変化</h2>
         <form id="nameForm" class="space-y-4">
+          <div>
+            <label for="locationSelect" class="block text-sm text-slate-600 mb-2">場所を選ぶ</label>
+            <select
+              id="locationSelect"
+              class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-300"
+            >
+              <option value="tokyo">東京の下丸子付近</option>
+              <option value="tochigi" selected>栃木県大田原市付近</option>
+            </select>
+          </div>
           <input
             id="nameInput"
             type="text"

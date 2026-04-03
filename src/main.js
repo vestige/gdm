@@ -1,11 +1,19 @@
 import "./style.css";
 import { fortunes, luckyActions, luckyColors, quotes, trivia } from "./data.js";
 
-const officeLocation = {
-  name: "栃木県大田原市周辺",
-  latitude: 36.8714,
-  longitude: 140.0174
+const locations = {
+  tokyo: {
+    name: "東京の下丸子付近",
+    latitude: 35.5717,
+    longitude: 139.6864
+  },
+  tochigi: {
+    name: "栃木県大田原市付近",
+    latitude: 36.8714,
+    longitude: 140.0174
+  }
 };
+let selectedLocationKey = "tochigi";
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
@@ -155,6 +163,7 @@ async function loadWeather() {
   const eveningRain = document.getElementById("eveningRain");
   const weatherComment = document.getElementById("weatherComment");
   const weatherEmoji = document.getElementById("weatherEmoji");
+  const officeLocation = locations[selectedLocationKey] ?? locations.tochigi;
 
   try {
     weatherStatus.textContent = `${officeLocation.name} の天気を取得中です...`;
@@ -212,11 +221,21 @@ async function loadWeather() {
 function setupEvents() {
   const nameForm = document.getElementById("nameForm");
   const nameInput = document.getElementById("nameInput");
+  const locationSelect = document.getElementById("locationSelect");
 
   nameForm.addEventListener("submit", (event) => {
     event.preventDefault();
     drawFortune();
     revealResults();
+  });
+
+  locationSelect.addEventListener("change", (event) => {
+    const nextLocation = event.target.value;
+    if (!locations[nextLocation]) {
+      return;
+    }
+    selectedLocationKey = nextLocation;
+    loadWeather();
   });
 
   nameInput.addEventListener("keydown", (event) => {
@@ -229,6 +248,10 @@ function setupEvents() {
 }
 
 function init() {
+  const locationSelect = document.getElementById("locationSelect");
+  if (locationSelect && locations[locationSelect.value]) {
+    selectedLocationKey = locationSelect.value;
+  }
   setTodayLabel();
   setupEvents();
   loadWeather();
