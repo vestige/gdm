@@ -14,6 +14,7 @@ const locations = {
   }
 };
 let selectedLocationKey = "tochigi";
+const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
@@ -156,6 +157,26 @@ function setWeatherBackground(type) {
   body.classList.add("bg-weather-sunny");
 }
 
+function loadSavedLocation() {
+  try {
+    const stored = localStorage.getItem(LOCATION_STORAGE_KEY);
+    if (stored && locations[stored]) {
+      return stored;
+    }
+  } catch (error) {
+    console.warn("場所の保存データを読み込めませんでした", error);
+  }
+  return selectedLocationKey;
+}
+
+function saveLocation(locationKey) {
+  try {
+    localStorage.setItem(LOCATION_STORAGE_KEY, locationKey);
+  } catch (error) {
+    console.warn("場所の保存に失敗しました", error);
+  }
+}
+
 async function loadWeather() {
   const weatherStatus = document.getElementById("weatherStatus");
   const currentTemp = document.getElementById("currentTemp");
@@ -235,6 +256,7 @@ function setupEvents() {
       return;
     }
     selectedLocationKey = nextLocation;
+    saveLocation(nextLocation);
     loadWeather();
   });
 
@@ -249,7 +271,11 @@ function setupEvents() {
 
 function init() {
   const locationSelect = document.getElementById("locationSelect");
-  if (locationSelect && locations[locationSelect.value]) {
+  const savedLocation = loadSavedLocation();
+  if (locationSelect && locations[savedLocation]) {
+    selectedLocationKey = savedLocation;
+    locationSelect.value = savedLocation;
+  } else if (locationSelect && locations[locationSelect.value]) {
     selectedLocationKey = locationSelect.value;
   }
   setTodayLabel();
