@@ -3,8 +3,8 @@
 - [x] 天気は Open-Meteo
 - [x] 豆知識は uselessfacts
 - [x] 今日は何の日は Wikimedia
-- [ ] 今日の運勢のバリエーションを増やしたい
-- [ ] 名言は serverless 経由で ZenQuotes
+- [x] 今日の運勢のバリエーションを増やしたい
+- [x] 名言は serverless 経由で ZenQuotes
 - [ ] TypeScriptの導入
 - [ ] TailWindの導入
 
