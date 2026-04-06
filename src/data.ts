@@ -1,4 +1,9 @@
-export const fortunes = [
+export type Fortune = {
+  rank: string;
+  message: string;
+};
+
+export const fortunes: Fortune[] = [
   {
     rank: "大吉",
     message: "流れが味方してくれる日です。朝の一歩がそのまま追い風になります。"
@@ -145,7 +150,7 @@ export const fortunes = [
   }
 ];
 
-export const luckyColors = [
+export const luckyColors: string[] = [
   "青",
   "緑",
   "赤",
@@ -179,7 +184,7 @@ export const luckyColors = [
   "ローズ"
 ];
 
-export const luckyActions = [
+export const luckyActions: string[] = [
   "朝いちで机を整える",
   "温かい飲み物を飲む",
   "誰かにあいさつする",
@@ -225,7 +230,7 @@ export const luckyActions = [
   "ショートカットを1つ覚えて実際に試す"
 ];
 
-export const quotes = [
+export const quotes: string[] = [
   "千里の道も一歩から。",
   "継続は力なり。",
   "急がば回れ。",
@@ -235,7 +240,7 @@ export const quotes = [
   "まず始めることが、いちばんの近道になる。"
 ];
 
-export const trivia = [
+export const trivia: string[] = [
   "朝に太陽の光を浴びると、体内時計が整いやすいと言われています。",
   "最初の15分の過ごし方で、その日の集中しやすさが変わることがあります。",
   "軽いストレッチだけでも、気分転換にかなり役立ちます。",

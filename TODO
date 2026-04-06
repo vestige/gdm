@@ -5,9 +5,8 @@
 - [x] 今日は何の日は Wikimedia
 - [x] 今日の運勢のバリエーションを増やしたい
 - [x] 名言は serverless 経由で ZenQuotes
-- [ ] TypeScriptの導入
-- [ ] TailWindの導入
-
+- [x] TailWindの導入
+- [x] TypeScriptの導入
 
 ### memo
 > npm run dev
