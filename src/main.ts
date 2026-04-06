@@ -1,5 +1,11 @@
 import "./style.css";
-import { fortunes, luckyActions, luckyColors, quotes, trivia } from "./data.js";
+import { fortunes, luckyActions, luckyColors, quotes, trivia } from "./data";
+
+type OfficeLocation = {
+  name: string;
+  latitude: number;
+  longitude: number;
+};
 
 const locations = {
   tokyo: {
@@ -12,8 +18,11 @@ const locations = {
     latitude: 36.8714,
     longitude: 140.0174
   }
-};
-let selectedLocationKey = "tochigi";
+} as const satisfies Record<string, OfficeLocation>;
+
+type LocationKey = keyof typeof locations;
+
+let selectedLocationKey: LocationKey = "tochigi";
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 const USELESS_FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
@@ -25,7 +34,44 @@ let latestQuoteText = "";
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
 
-function hashString(str) {
+type UselessFactResponse = {
+  text?: string;
+};
+
+type TranslationResponse = {
+  responseData?: {
+    translatedText?: string;
+  };
+};
+
+type WikimediaEntry = {
+  year?: number;
+  text?: string;
+};
+
+type WikimediaResponse = {
+  selected?: WikimediaEntry[];
+  events?: WikimediaEntry[];
+};
+
+type QuoteResponse = {
+  quote?: string;
+  author?: string;
+};
+
+function getElementByIdOrThrow<T extends HTMLElement>(id: string): T {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`Element not found: #${id}`);
+  }
+  return element as T;
+}
+
+function isLocationKey(value: string): value is LocationKey {
+  return value in locations;
+}
+
+function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i += 1) {
     hash = (hash * 31 + str.charCodeAt(i)) % 100000;
@@ -33,18 +79,18 @@ function hashString(str) {
   return hash;
 }
 
-function getTodaySeed(name = "") {
+function getTodaySeed(name = ""): number {
   const now = new Date();
   const dateSeed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
   return dateSeed + hashString(name.trim());
 }
 
-function pickBySeed(array, seed, offset = 0) {
+function pickBySeed<T>(array: T[], seed: number, offset = 0): T {
   return array[(seed + offset) % array.length];
 }
 
-function setTodayLabel() {
-  const todayLabel = document.getElementById("todayLabel");
+function setTodayLabel(): void {
+  const todayLabel = getElementByIdOrThrow<HTMLElement>("todayLabel");
   const now = new Date();
 
   const text = now.toLocaleDateString("ja-JP", {
@@ -57,47 +103,47 @@ function setTodayLabel() {
   todayLabel.textContent = `${text} ・ 良い一日を`;
 }
 
-function revealResults() {
-  const resultSection = document.getElementById("resultSection");
+function revealResults(): void {
+  const resultSection = getElementByIdOrThrow<HTMLElement>("resultSection");
   if (!resultSection.classList.contains("hidden")) {
     return;
   }
 
   resultSection.classList.remove("hidden");
-  resultSection.querySelectorAll(".animate-float-up").forEach((el) => {
-    el.style.animation = "none";
-    void el.offsetWidth;
-    el.style.animation = "";
+  resultSection.querySelectorAll<HTMLElement>(".animate-float-up").forEach((element) => {
+    element.style.animation = "none";
+    void element.offsetWidth;
+    element.style.animation = "";
   });
 }
 
-function replayCardAnimation(el) {
-  el.classList.remove("animate-glow-soft");
-  void el.offsetWidth;
-  el.classList.add("animate-glow-soft");
+function replayCardAnimation(element: HTMLElement): void {
+  element.classList.remove("animate-glow-soft");
+  void element.offsetWidth;
+  element.classList.add("animate-glow-soft");
 }
 
-function drawFortune() {
-  const name = document.getElementById("nameInput").value;
-  const seed = getTodaySeed(name);
+function drawFortune(): void {
+  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+  const seed = getTodaySeed(nameInput.value);
 
   const fortune = pickBySeed(fortunes, seed, 1);
   const color = pickBySeed(luckyColors, seed, 3);
   const action = pickBySeed(luckyActions, seed, 5);
   const fallbackQuote = pickBySeed(quotes, seed, 7);
 
-  document.getElementById("fortuneRank").textContent = fortune.rank;
-  document.getElementById("fortuneMessage").textContent = fortune.message;
-  document.getElementById("luckyColor").textContent = color;
-  document.getElementById("luckyAction").textContent = action;
-  document.getElementById("quoteText").textContent = latestQuoteText || fallbackQuote;
-  document.getElementById("triviaText").textContent = latestTriviaText || "豆知識を取得中です...";
+  getElementByIdOrThrow<HTMLElement>("fortuneRank").textContent = fortune.rank;
+  getElementByIdOrThrow<HTMLElement>("fortuneMessage").textContent = fortune.message;
+  getElementByIdOrThrow<HTMLElement>("luckyColor").textContent = color;
+  getElementByIdOrThrow<HTMLElement>("luckyAction").textContent = action;
+  getElementByIdOrThrow<HTMLElement>("quoteText").textContent = latestQuoteText || fallbackQuote;
+  getElementByIdOrThrow<HTMLElement>("triviaText").textContent = latestTriviaText || "豆知識を取得中です...";
 
-  replayCardAnimation(document.getElementById("fortuneCard"));
+  replayCardAnimation(getElementByIdOrThrow<HTMLElement>("fortuneCard"));
 }
 
-async function loadQuote(name = "") {
-  const quoteText = document.getElementById("quoteText");
+async function loadQuote(name = ""): Promise<void> {
+  const quoteText = getElementByIdOrThrow<HTMLElement>("quoteText");
   quoteText.textContent = "名言を取得中です...";
 
   try {
@@ -106,9 +152,9 @@ async function loadQuote(name = "") {
       throw new Error(`quote APIエラー: ${response.status}`);
     }
 
-    const data = await response.json();
-    const quote = typeof data?.quote === "string" ? data.quote.trim() : "";
-    const author = typeof data?.author === "string" ? data.author.trim() : "";
+    const data = (await response.json()) as QuoteResponse;
+    const quote = typeof data.quote === "string" ? data.quote.trim() : "";
+    const author = typeof data.author === "string" ? data.author.trim() : "";
     if (!quote) {
       throw new Error("quote APIレスポンスに quote がありません");
     }
@@ -117,14 +163,15 @@ async function loadQuote(name = "") {
     quoteText.textContent = latestQuoteText;
   } catch (error) {
     console.error(error);
-    const fallbackQuote = pickBySeed(quotes, getTodaySeed(name || document.getElementById("nameInput").value), 7);
+    const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+    const fallbackQuote = pickBySeed(quotes, getTodaySeed(name || nameInput.value), 7);
     latestQuoteText = fallbackQuote;
     quoteText.textContent = fallbackQuote;
   }
 }
 
-async function loadUselessFact() {
-  const triviaText = document.getElementById("triviaText");
+async function loadUselessFact(): Promise<void> {
+  const triviaText = getElementByIdOrThrow<HTMLElement>("triviaText");
   triviaText.textContent = "豆知識を取得中です...";
 
   try {
@@ -133,8 +180,8 @@ async function loadUselessFact() {
       throw new Error(`uselessfacts APIエラー: ${response.status}`);
     }
 
-    const data = await response.json();
-    const factText = typeof data?.text === "string" ? data.text.trim() : "";
+    const data = (await response.json()) as UselessFactResponse;
+    const factText = typeof data.text === "string" ? data.text.trim() : "";
     if (!factText) {
       throw new Error("uselessfacts のレスポンスに text がありません");
     }
@@ -144,13 +191,14 @@ async function loadUselessFact() {
     triviaText.textContent = latestTriviaText;
   } catch (error) {
     console.error(error);
-    const fallback = pickBySeed(trivia, getTodaySeed(document.getElementById("nameInput").value), 11);
+    const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+    const fallback = pickBySeed(trivia, getTodaySeed(nameInput.value), 11);
     latestTriviaText = fallback;
     triviaText.textContent = fallback;
   }
 }
 
-async function translateTextToJapanese(text) {
+async function translateTextToJapanese(text: string): Promise<string> {
   try {
     const translateUrl =
       `${TRANSLATE_API_BASE_URL}?q=${encodeURIComponent(text)}` +
@@ -160,19 +208,18 @@ async function translateTextToJapanese(text) {
       return "";
     }
 
-    const translateData = await translateResponse.json();
-    const translatedText = typeof translateData?.responseData?.translatedText === "string"
+    const translateData = (await translateResponse.json()) as TranslationResponse;
+    return typeof translateData.responseData?.translatedText === "string"
       ? translateData.responseData.translatedText.trim()
       : "";
-    return translatedText;
   } catch (translateError) {
     console.warn("翻訳に失敗しました。", translateError);
     return "";
   }
 }
 
-async function loadOnThisDay() {
-  const onThisDayText = document.getElementById("onThisDayText");
+async function loadOnThisDay(): Promise<void> {
+  const onThisDayText = getElementByIdOrThrow<HTMLElement>("onThisDayText");
   const today = new Date();
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
@@ -184,22 +231,23 @@ async function loadOnThisDay() {
       throw new Error(`Wikimedia APIエラー: ${response.status}`);
     }
 
-    const data = await response.json();
-    const entries = Array.isArray(data?.selected) && data.selected.length > 0
+    const data = (await response.json()) as WikimediaResponse;
+    const entries = Array.isArray(data.selected) && data.selected.length > 0
       ? data.selected
-      : (Array.isArray(data?.events) ? data.events : []);
+      : (Array.isArray(data.events) ? data.events : []);
+
     if (entries.length === 0) {
       throw new Error("Wikimedia のレスポンスに出来事がありません");
     }
 
     const entry = entries[getTodaySeed() % entries.length];
-    const rawText = typeof entry?.text === "string" ? entry.text.trim() : "";
+    const rawText = typeof entry.text === "string" ? entry.text.trim() : "";
     if (!rawText) {
       throw new Error("Wikimedia のレスポンスに text がありません");
     }
 
     const translatedText = await translateTextToJapanese(rawText);
-    const yearLabel = typeof entry?.year === "number" ? `【${entry.year}年】` : "";
+    const yearLabel = typeof entry.year === "number" ? `【${entry.year}年】` : "";
     onThisDayText.textContent = `${yearLabel}${translatedText || rawText}`;
   } catch (error) {
     console.error(error);
@@ -207,19 +255,19 @@ async function loadOnThisDay() {
   }
 }
 
-function weatherCodeToEmoji(code) {
+function weatherCodeToEmoji(code: number | undefined): string {
   if (code === 0) return "☀️";
-  if ([1, 2].includes(code)) return "🌤️";
+  if (code !== undefined && [1, 2].includes(code)) return "🌤️";
   if (code === 3) return "☁️";
-  if ([45, 48].includes(code)) return "🌫️";
-  if ([51, 53, 55, 56, 57].includes(code)) return "🌦️";
-  if ([61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "🌧️";
-  if ([71, 73, 75, 77, 85, 86].includes(code)) return "❄️";
-  if ([95, 96, 99].includes(code)) return "⛈️";
+  if (code !== undefined && [45, 48].includes(code)) return "🌫️";
+  if (code !== undefined && [51, 53, 55, 56, 57].includes(code)) return "🌦️";
+  if (code !== undefined && [61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "🌧️";
+  if (code !== undefined && [71, 73, 75, 77, 85, 86].includes(code)) return "❄️";
+  if (code !== undefined && [95, 96, 99].includes(code)) return "⛈️";
   return "⛅";
 }
 
-function buildWeatherComment(eveningTemp, eveningRain) {
+function buildWeatherComment(eveningTemp: number, eveningRain: number): string {
   if (eveningRain >= 60) {
     return "帰りは雨の可能性が高めです。折りたたみ傘があると安心です。";
   }
@@ -238,7 +286,7 @@ function buildWeatherComment(eveningTemp, eveningRain) {
   return "帰りの天気は比較的おだやかそうです。気持ちよく帰れそうですね。";
 }
 
-function findHourlyIndex(times, targetHour) {
+function findHourlyIndex(times: string[], targetHour: number): number {
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, "0");
@@ -248,18 +296,18 @@ function findHourlyIndex(times, targetHour) {
   return times.findIndex((time) => time.startsWith(target));
 }
 
-function classifyWeatherForBackground(code) {
-  if (rainCodes.includes(code)) {
+function classifyWeatherForBackground(code: number | undefined): "rainy" | "cloudy" | "sunny" {
+  if (code !== undefined && rainCodes.includes(code)) {
     return "rainy";
   }
-  if (cloudyCodes.includes(code)) {
+  if (code !== undefined && cloudyCodes.includes(code)) {
     return "cloudy";
   }
   return "sunny";
 }
 
-function setWeatherBackground(type) {
-  const body = document.getElementById("appBody");
+function setWeatherBackground(type: "rainy" | "cloudy" | "sunny"): void {
+  const body = getElementByIdOrThrow<HTMLElement>("appBody");
   body.classList.remove("bg-weather-sunny", "bg-weather-cloudy", "bg-weather-rainy", "bg-sky-soft");
 
   if (type === "rainy") {
@@ -273,10 +321,10 @@ function setWeatherBackground(type) {
   body.classList.add("bg-weather-sunny");
 }
 
-function loadSavedLocation() {
+function loadSavedLocation(): LocationKey {
   try {
     const stored = localStorage.getItem(LOCATION_STORAGE_KEY);
-    if (stored && locations[stored]) {
+    if (stored && isLocationKey(stored)) {
       return stored;
     }
   } catch (error) {
@@ -285,7 +333,7 @@ function loadSavedLocation() {
   return selectedLocationKey;
 }
 
-function saveLocation(locationKey) {
+function saveLocation(locationKey: LocationKey): void {
   try {
     localStorage.setItem(LOCATION_STORAGE_KEY, locationKey);
   } catch (error) {
@@ -293,14 +341,26 @@ function saveLocation(locationKey) {
   }
 }
 
-async function loadWeather() {
-  const weatherStatus = document.getElementById("weatherStatus");
-  const currentTemp = document.getElementById("currentTemp");
-  const eveningTemp = document.getElementById("eveningTemp");
-  const eveningRain = document.getElementById("eveningRain");
-  const weatherComment = document.getElementById("weatherComment");
-  const weatherEmoji = document.getElementById("weatherEmoji");
-  const officeLocation = locations[selectedLocationKey] ?? locations.tochigi;
+type OpenMeteoResponse = {
+  current?: {
+    temperature_2m?: number;
+    weather_code?: number;
+  };
+  hourly?: {
+    time?: string[];
+    temperature_2m?: number[];
+    precipitation_probability?: number[];
+  };
+};
+
+async function loadWeather(): Promise<void> {
+  const weatherStatus = getElementByIdOrThrow<HTMLElement>("weatherStatus");
+  const currentTemp = getElementByIdOrThrow<HTMLElement>("currentTemp");
+  const eveningTemp = getElementByIdOrThrow<HTMLElement>("eveningTemp");
+  const eveningRain = getElementByIdOrThrow<HTMLElement>("eveningRain");
+  const weatherComment = getElementByIdOrThrow<HTMLElement>("weatherComment");
+  const weatherEmoji = getElementByIdOrThrow<HTMLElement>("weatherEmoji");
+  const officeLocation = locations[selectedLocationKey];
 
   try {
     weatherStatus.textContent = `${officeLocation.name} の天気を取得中です...`;
@@ -318,12 +378,12 @@ async function loadWeather() {
       throw new Error(`天気APIエラー: ${response.status}`);
     }
 
-    const data = await response.json();
-    const currentTemperature = data?.current?.temperature_2m;
-    const currentCode = data?.current?.weather_code;
-    const hourlyTimes = data?.hourly?.time ?? [];
-    const hourlyTemps = data?.hourly?.temperature_2m ?? [];
-    const hourlyRainProb = data?.hourly?.precipitation_probability ?? [];
+    const data = (await response.json()) as OpenMeteoResponse;
+    const currentTemperature = data.current?.temperature_2m;
+    const currentCode = data.current?.weather_code;
+    const hourlyTimes = data.hourly?.time ?? [];
+    const hourlyTemps = data.hourly?.temperature_2m ?? [];
+    const hourlyRainProb = data.hourly?.precipitation_probability ?? [];
     const eveningIndex = findHourlyIndex(hourlyTimes, 18);
 
     currentTemp.textContent = typeof currentTemperature === "number" ? `${currentTemperature} ℃` : "取得できませんでした";
@@ -355,28 +415,28 @@ async function loadWeather() {
   }
 }
 
-function setupEvents() {
-  const nameForm = document.getElementById("nameForm");
-  const nameInput = document.getElementById("nameInput");
-  const locationSelect = document.getElementById("locationSelect");
+function setupEvents(): void {
+  const nameForm = getElementByIdOrThrow<HTMLFormElement>("nameForm");
+  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+  const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
 
   nameForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const name = nameInput.value;
     drawFortune();
     revealResults();
-    loadQuote(name);
-    loadUselessFact();
+    void loadQuote(name);
+    void loadUselessFact();
   });
 
-  locationSelect.addEventListener("change", (event) => {
-    const nextLocation = event.target.value;
-    if (!locations[nextLocation]) {
+  locationSelect.addEventListener("change", () => {
+    const nextLocation = locationSelect.value;
+    if (!isLocationKey(nextLocation)) {
       return;
     }
     selectedLocationKey = nextLocation;
     saveLocation(nextLocation);
-    loadWeather();
+    void loadWeather();
   });
 
   nameInput.addEventListener("keydown", (event) => {
@@ -385,27 +445,28 @@ function setupEvents() {
       const name = nameInput.value;
       drawFortune();
       revealResults();
-      loadQuote(name);
-      loadUselessFact();
+      void loadQuote(name);
+      void loadUselessFact();
     }
   });
 }
 
-function init() {
-  const locationSelect = document.getElementById("locationSelect");
+function init(): void {
+  const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
   const savedLocation = loadSavedLocation();
-  if (locationSelect && locations[savedLocation]) {
+  if (isLocationKey(savedLocation)) {
     selectedLocationKey = savedLocation;
     locationSelect.value = savedLocation;
-  } else if (locationSelect && locations[locationSelect.value]) {
+  } else if (isLocationKey(locationSelect.value)) {
     selectedLocationKey = locationSelect.value;
   }
+
   setTodayLabel();
   setupEvents();
-  loadWeather();
-  loadQuote();
-  loadUselessFact();
-  loadOnThisDay();
+  void loadWeather();
+  void loadQuote();
+  void loadUselessFact();
+  void loadOnThisDay();
 }
 
 init();
