@@ -18,7 +18,9 @@ const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 const USELESS_FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
 const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all";
+const QUOTE_API_ENDPOINT = "/api/quote";
 let latestTriviaText = "";
+let latestQuoteText = "";
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
@@ -82,16 +84,43 @@ function drawFortune() {
   const fortune = pickBySeed(fortunes, seed, 1);
   const color = pickBySeed(luckyColors, seed, 3);
   const action = pickBySeed(luckyActions, seed, 5);
-  const quote = pickBySeed(quotes, seed, 7);
+  const fallbackQuote = pickBySeed(quotes, seed, 7);
 
   document.getElementById("fortuneRank").textContent = fortune.rank;
   document.getElementById("fortuneMessage").textContent = fortune.message;
   document.getElementById("luckyColor").textContent = color;
   document.getElementById("luckyAction").textContent = action;
-  document.getElementById("quoteText").textContent = quote;
+  document.getElementById("quoteText").textContent = latestQuoteText || fallbackQuote;
   document.getElementById("triviaText").textContent = latestTriviaText || "豆知識を取得中です...";
 
   replayCardAnimation(document.getElementById("fortuneCard"));
+}
+
+async function loadQuote(name = "") {
+  const quoteText = document.getElementById("quoteText");
+  quoteText.textContent = "名言を取得中です...";
+
+  try {
+    const response = await fetch(QUOTE_API_ENDPOINT);
+    if (!response.ok) {
+      throw new Error(`quote APIエラー: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const quote = typeof data?.quote === "string" ? data.quote.trim() : "";
+    const author = typeof data?.author === "string" ? data.author.trim() : "";
+    if (!quote) {
+      throw new Error("quote APIレスポンスに quote がありません");
+    }
+
+    latestQuoteText = author ? `「${quote}」 - ${author}` : `「${quote}」`;
+    quoteText.textContent = latestQuoteText;
+  } catch (error) {
+    console.error(error);
+    const fallbackQuote = pickBySeed(quotes, getTodaySeed(name || document.getElementById("nameInput").value), 7);
+    latestQuoteText = fallbackQuote;
+    quoteText.textContent = fallbackQuote;
+  }
 }
 
 async function loadUselessFact() {
@@ -333,8 +362,10 @@ function setupEvents() {
 
   nameForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    const name = nameInput.value;
     drawFortune();
     revealResults();
+    loadQuote(name);
     loadUselessFact();
   });
 
@@ -351,8 +382,10 @@ function setupEvents() {
   nameInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
+      const name = nameInput.value;
       drawFortune();
       revealResults();
+      loadQuote(name);
       loadUselessFact();
     }
   });
@@ -370,6 +403,7 @@ function init() {
   setTodayLabel();
   setupEvents();
   loadWeather();
+  loadQuote();
   loadUselessFact();
   loadOnThisDay();
 }
