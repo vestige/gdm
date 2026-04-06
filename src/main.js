@@ -17,6 +17,7 @@ let selectedLocationKey = "tochigi";
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 const USELESS_FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
+const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all";
 let latestTriviaText = "";
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
@@ -109,32 +110,71 @@ async function loadUselessFact() {
       throw new Error("uselessfacts のレスポンスに text がありません");
     }
 
-    let translatedFactText = factText;
-    try {
-      const translateUrl =
-        `${TRANSLATE_API_BASE_URL}?q=${encodeURIComponent(factText)}` +
-        "&langpair=en|ja";
-      const translateResponse = await fetch(translateUrl);
-      if (translateResponse.ok) {
-        const translateData = await translateResponse.json();
-        const translatedText = typeof translateData?.responseData?.translatedText === "string"
-          ? translateData.responseData.translatedText.trim()
-          : "";
-        if (translatedText) {
-          translatedFactText = translatedText;
-        }
-      }
-    } catch (translateError) {
-      console.warn("豆知識の翻訳に失敗しました。英語原文で表示します。", translateError);
-    }
-
-    latestTriviaText = translatedFactText;
+    const translatedFactText = await translateTextToJapanese(factText);
+    latestTriviaText = translatedFactText || factText;
     triviaText.textContent = latestTriviaText;
   } catch (error) {
     console.error(error);
     const fallback = pickBySeed(trivia, getTodaySeed(document.getElementById("nameInput").value), 11);
     latestTriviaText = fallback;
     triviaText.textContent = fallback;
+  }
+}
+
+async function translateTextToJapanese(text) {
+  try {
+    const translateUrl =
+      `${TRANSLATE_API_BASE_URL}?q=${encodeURIComponent(text)}` +
+      "&langpair=en|ja";
+    const translateResponse = await fetch(translateUrl);
+    if (!translateResponse.ok) {
+      return "";
+    }
+
+    const translateData = await translateResponse.json();
+    const translatedText = typeof translateData?.responseData?.translatedText === "string"
+      ? translateData.responseData.translatedText.trim()
+      : "";
+    return translatedText;
+  } catch (translateError) {
+    console.warn("翻訳に失敗しました。", translateError);
+    return "";
+  }
+}
+
+async function loadOnThisDay() {
+  const onThisDayText = document.getElementById("onThisDayText");
+  const today = new Date();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  onThisDayText.textContent = "今日は何の日を取得中です...";
+
+  try {
+    const response = await fetch(`${WIKIMEDIA_ONTHISDAY_API_BASE_URL}/${month}/${day}`);
+    if (!response.ok) {
+      throw new Error(`Wikimedia APIエラー: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const entries = Array.isArray(data?.selected) && data.selected.length > 0
+      ? data.selected
+      : (Array.isArray(data?.events) ? data.events : []);
+    if (entries.length === 0) {
+      throw new Error("Wikimedia のレスポンスに出来事がありません");
+    }
+
+    const entry = entries[getTodaySeed() % entries.length];
+    const rawText = typeof entry?.text === "string" ? entry.text.trim() : "";
+    if (!rawText) {
+      throw new Error("Wikimedia のレスポンスに text がありません");
+    }
+
+    const translatedText = await translateTextToJapanese(rawText);
+    const yearLabel = typeof entry?.year === "number" ? `【${entry.year}年】` : "";
+    onThisDayText.textContent = `${yearLabel}${translatedText || rawText}`;
+  } catch (error) {
+    console.error(error);
+    onThisDayText.textContent = "今日は何の日を取得できませんでした。";
   }
 }
 
@@ -331,6 +371,7 @@ function init() {
   setupEvents();
   loadWeather();
   loadUselessFact();
+  loadOnThisDay();
 }
 
 init();
