@@ -21,6 +21,7 @@ const locations = {
 } as const satisfies Record<string, OfficeLocation>;
 
 type LocationKey = keyof typeof locations;
+type WeatherType = "rainy" | "cloudy" | "sunny";
 
 let selectedLocationKey: LocationKey = "tochigi";
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
@@ -28,8 +29,45 @@ const USELESS_FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
 const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all";
 const QUOTE_API_ENDPOINT = "/api/quote";
+const DEAL_TIP_API_ENDPOINT = "/api/deal-tips";
 let latestTriviaText = "";
 let latestQuoteText = "";
+const localDealTips: Record<LocationKey, Record<WeatherType, string[]>> = {
+  tokyo: {
+    sunny: [
+      "多摩川沿いを10〜15分だけ歩くと、気分転換と運動をまとめてこなせます。",
+      "晴れの日は下丸子周辺でテイクアウトして外で食べると、ランチ満足度が上がりやすいです。",
+      "移動を1駅ぶんだけ徒歩にすると、交通費を抑えつつリフレッシュできます。"
+    ],
+    cloudy: [
+      "曇りの日は混雑ピーク前に買い物を済ませると、待ち時間を減らしやすいです。",
+      "気温差に備えて薄手の羽織りを持つと、余計な買い足しを防げます。",
+      "屋外と屋内を半々で使える予定にすると、天候変化にも柔軟に動けます。"
+    ],
+    rainy: [
+      "雨の日は駅直結・屋根のある動線を優先すると、傘トラブルや時間ロスを抑えられます。",
+      "外出はまとめて1回にすると、移動コストと濡れるストレスを減らせます。",
+      "屋内で休める場所を先に決めておくと、急な強雨でも無駄な出費を避けやすいです。"
+    ]
+  },
+  tochigi: {
+    sunny: [
+      "晴れの日は近場の公園方面へ短時間散歩すると、気分転換コスパが高いです。",
+      "明るい時間にまとめ買いを済ませると、夕方の移動回数を減らせます。",
+      "車移動前に寄り道先を1つに絞ると、ガソリン消費を抑えやすいです。"
+    ],
+    cloudy: [
+      "曇りの日は外出を短時間に区切ると、天気悪化時のリスクを減らせます。",
+      "気温に合わせて飲み物を持参すると、コンビニ立ち寄り回数を減らせます。",
+      "予定を近いエリアで固めると、移動の手間と時間を節約できます。"
+    ],
+    rainy: [
+      "雨の日は屋内中心の用事に切り替えると、移動コストを抑えやすいです。",
+      "買い物リストを先に作って1回で済ませると、雨の日の外出回数を減らせます。",
+      "出発前に駐車場所を決めると、雨の中の移動時間を短縮できます。"
+    ]
+  }
+};
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
@@ -57,6 +95,12 @@ type WikimediaResponse = {
 type QuoteResponse = {
   quote?: string;
   author?: string;
+};
+
+type DealTipResponse = {
+  tip?: string;
+  placeName?: string;
+  source?: string;
 };
 
 function getElementByIdOrThrow<T extends HTMLElement>(id: string): T {
@@ -87,6 +131,66 @@ function getTodaySeed(name = ""): number {
 
 function pickBySeed<T>(array: T[], seed: number, offset = 0): T {
   return array[(seed + offset) % array.length];
+}
+
+function getWeatherLabel(weatherType: WeatherType): string {
+  const weatherLabel: Record<WeatherType, string> = {
+    sunny: "晴れ向け",
+    cloudy: "くもり向け",
+    rainy: "雨向け"
+  };
+  return weatherLabel[weatherType];
+}
+
+function setDealTipSourceLabel(source: string): void {
+  getElementByIdOrThrow<HTMLElement>("dealTipSource").textContent = `データソース: ${source}`;
+}
+
+function updateLocalDealTip(weatherType: WeatherType): void {
+  const location = locations[selectedLocationKey];
+  const tips = localDealTips[selectedLocationKey][weatherType];
+  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+  const tipSeed = getTodaySeed(`${selectedLocationKey}-${weatherType}-${nameInput.value}`);
+  const tip = pickBySeed(tips, tipSeed, 17);
+  setDealTipSourceLabel("ローカルプリセット（フォールバック）");
+
+  getElementByIdOrThrow<HTMLElement>("localDealTip").textContent =
+    `${location.name}の${getWeatherLabel(weatherType)}: ${tip}`;
+}
+
+async function loadDealTip(weatherType: WeatherType): Promise<void> {
+  const location = locations[selectedLocationKey];
+  const dealTipElement = getElementByIdOrThrow<HTMLElement>("localDealTip");
+  setDealTipSourceLabel("Google Places");
+  dealTipElement.textContent = `${location.name}の${getWeatherLabel(weatherType)}お得ヒントを検索中です...`;
+
+  try {
+    const params = new URLSearchParams({
+      lat: String(location.latitude),
+      lon: String(location.longitude),
+      weather: weatherType
+    });
+    const response = await fetch(`${DEAL_TIP_API_ENDPOINT}?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`deal-tips APIエラー: ${response.status}`);
+    }
+
+    const data = (await response.json()) as DealTipResponse;
+    const tip = typeof data.tip === "string" ? data.tip.trim() : "";
+    const placeName = typeof data.placeName === "string" ? data.placeName.trim() : "";
+    const source = typeof data.source === "string" ? data.source.trim() : "";
+    if (!tip) {
+      throw new Error("deal-tips APIレスポンスに tip がありません");
+    }
+    setDealTipSourceLabel(source || "Google Places");
+
+    dealTipElement.textContent = placeName
+      ? `${location.name}の${getWeatherLabel(weatherType)}: ${placeName} - ${tip}`
+      : `${location.name}の${getWeatherLabel(weatherType)}: ${tip}`;
+  } catch (error) {
+    console.error(error);
+    updateLocalDealTip(weatherType);
+  }
 }
 
 function setTodayLabel(): void {
@@ -296,7 +400,7 @@ function findHourlyIndex(times: string[], targetHour: number): number {
   return times.findIndex((time) => time.startsWith(target));
 }
 
-function classifyWeatherForBackground(code: number | undefined): "rainy" | "cloudy" | "sunny" {
+function classifyWeatherForBackground(code: number | undefined): WeatherType {
   if (code !== undefined && rainCodes.includes(code)) {
     return "rainy";
   }
@@ -389,7 +493,9 @@ async function loadWeather(): Promise<void> {
     currentTemp.textContent = typeof currentTemperature === "number" ? `${currentTemperature} ℃` : "取得できませんでした";
     weatherEmoji.textContent = weatherCodeToEmoji(currentCode);
     weatherStatus.textContent = `${officeLocation.name} の予報です`;
-    setWeatherBackground(classifyWeatherForBackground(currentCode));
+    const weatherType = classifyWeatherForBackground(currentCode);
+    setWeatherBackground(weatherType);
+    await loadDealTip(weatherType);
 
     if (eveningIndex < 0) {
       eveningTemp.textContent = "取得できませんでした";
@@ -412,6 +518,7 @@ async function loadWeather(): Promise<void> {
     eveningRain.textContent = "---";
     weatherComment.textContent = "通信状況を確認して、もう一度読み込んでみてください。";
     setWeatherBackground("cloudy");
+    updateLocalDealTip("cloudy");
   }
 }
 
