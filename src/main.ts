@@ -101,6 +101,9 @@ type DealTipResponse = {
   tip?: string;
   placeName?: string;
   source?: string;
+  couponTip?: string;
+  couponSource?: string;
+  couponUrl?: string;
 };
 
 function getElementByIdOrThrow<T extends HTMLElement>(id: string): T {
@@ -146,6 +149,42 @@ function setDealTipSourceLabel(source: string): void {
   getElementByIdOrThrow<HTMLElement>("dealTipSource").textContent = `データソース: ${source}`;
 }
 
+function setCouponSourceLabel(source: string): void {
+  getElementByIdOrThrow<HTMLElement>("couponSource").textContent = `データソース: ${source}`;
+}
+
+function setCouponLink(url: string, label: string): void {
+  const link = getElementByIdOrThrow<HTMLAnchorElement>("couponLink");
+  const normalizedUrl = url.trim();
+  if (!normalizedUrl) {
+    link.classList.add("hidden");
+    link.removeAttribute("href");
+    link.textContent = "";
+    return;
+  }
+  link.href = normalizedUrl;
+  link.target = "_blank";
+  link.rel = "noreferrer noopener";
+  link.textContent = label;
+  link.classList.remove("hidden");
+}
+
+function updateLocalCouponTip(weatherType: WeatherType): void {
+  const location = locations[selectedLocationKey];
+  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+  const seed = getTodaySeed(`${selectedLocationKey}-${weatherType}-${nameInput.value}-coupon`);
+  const weatherLabel = getWeatherLabel(weatherType);
+  const localCouponCandidates: string[] = [
+    `${location.name}の${weatherLabel}: 公式アプリのクーポン欄と店頭の週替わりセールを先に確認してから移動すると、ムダ買いを減らしやすいです。`,
+    `${location.name}の${weatherLabel}: 近場のスーパーとドラッグストアの特売日を1回で回れる順に並べると、時間と出費を抑えやすいです。`,
+    `${location.name}の${weatherLabel}: 飲食店はランチセット・時間帯割引が出ることがあるので、出発前に公式情報を1件だけチェックするのがおすすめです。`
+  ];
+  const couponTip = pickBySeed(localCouponCandidates, seed, 23);
+  getElementByIdOrThrow<HTMLElement>("couponTip").textContent = couponTip;
+  setCouponSourceLabel("ローカルプリセット（フォールバック）");
+  setCouponLink("", "");
+}
+
 function updateLocalDealTip(weatherType: WeatherType): void {
   const location = locations[selectedLocationKey];
   const tips = localDealTips[selectedLocationKey][weatherType];
@@ -156,13 +195,18 @@ function updateLocalDealTip(weatherType: WeatherType): void {
 
   getElementByIdOrThrow<HTMLElement>("localDealTip").textContent =
     `${location.name}の${getWeatherLabel(weatherType)}: ${tip}`;
+  updateLocalCouponTip(weatherType);
 }
 
 async function loadDealTip(weatherType: WeatherType): Promise<void> {
   const location = locations[selectedLocationKey];
   const dealTipElement = getElementByIdOrThrow<HTMLElement>("localDealTip");
+  const couponTipElement = getElementByIdOrThrow<HTMLElement>("couponTip");
   setDealTipSourceLabel("Google Places");
+  setCouponSourceLabel("Google Places");
   dealTipElement.textContent = `${location.name}の${getWeatherLabel(weatherType)}お得ヒントを検索中です...`;
+  couponTipElement.textContent = `${location.name}のクーポン/セール情報を検索中です...`;
+  setCouponLink("", "");
 
   try {
     const params = new URLSearchParams({
@@ -179,14 +223,20 @@ async function loadDealTip(weatherType: WeatherType): Promise<void> {
     const tip = typeof data.tip === "string" ? data.tip.trim() : "";
     const placeName = typeof data.placeName === "string" ? data.placeName.trim() : "";
     const source = typeof data.source === "string" ? data.source.trim() : "";
+    const couponTip = typeof data.couponTip === "string" ? data.couponTip.trim() : "";
+    const couponSource = typeof data.couponSource === "string" ? data.couponSource.trim() : "";
+    const couponUrl = typeof data.couponUrl === "string" ? data.couponUrl.trim() : "";
     if (!tip) {
       throw new Error("deal-tips APIレスポンスに tip がありません");
     }
     setDealTipSourceLabel(source || "Google Places");
+    setCouponSourceLabel(couponSource || source || "Google Places");
 
     dealTipElement.textContent = placeName
       ? `${location.name}の${getWeatherLabel(weatherType)}: ${placeName} - ${tip}`
       : `${location.name}の${getWeatherLabel(weatherType)}: ${tip}`;
+    couponTipElement.textContent = couponTip || `${location.name}周辺のセール情報を検索してみてください。`;
+    setCouponLink(couponUrl, "クーポン/セールを検索");
   } catch (error) {
     console.error(error);
     updateLocalDealTip(weatherType);
