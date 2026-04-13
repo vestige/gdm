@@ -34,6 +34,24 @@ const WEATHER_TEMPLATES = {
   ]
 };
 
+const COUPON_TEMPLATES = {
+  sunny: [
+    "{place} 周辺は晴れの日の回遊がしやすいので、公式サイトやアプリの当日クーポンを出発前にチェックしておくと使いやすいです。",
+    "{place} の近くで買い物をまとめるなら、店舗の時間帯セールを先に見ておくと移動回数を減らしやすいです。",
+    "{place} エリアは天気が安定しやすいので、ポイントアップデーと合わせるとお得になりやすいです。"
+  ],
+  cloudy: [
+    "{place} 周辺のセール情報は日替わりになりやすいので、公式情報を1回確認してから動くと効率的です。",
+    "{place} に行く前にクーポン配布アプリを確認しておくと、くもりの日でも無駄足を減らしやすいです。",
+    "{place} の近場店舗で、食品と日用品の特売日を合わせて回るのがおすすめです。"
+  ],
+  rainy: [
+    "雨の日は {place} のような屋内スポット中心で、アプリ限定クーポンと館内セールを先に確認すると移動負担を抑えられます。",
+    "{place} 周辺の屋内店舗は雨天時キャンペーンが出る場合があるので、事前チェックがおすすめです。",
+    "天気が雨寄りなので、{place} エリアのまとめ買いとクーポン併用で外出回数を減らすのが効果的です。"
+  ]
+};
+
 function hashString(text) {
   let hash = 0;
   for (let i = 0; i < text.length; i += 1) {
@@ -160,12 +178,21 @@ module.exports = async function handler(req, res) {
     const tip = template
       .replaceAll("{place}", placeName)
       .replaceAll("{category}", category);
+    const couponTemplate = pickBySeed(COUPON_TEMPLATES[weather], seed, 41);
+    const couponTip = couponTemplate
+      .replaceAll("{place}", placeName)
+      .replaceAll("{category}", category);
+    const couponQuery = `${placeName} クーポン セール`;
+    const couponUrl = `https://www.google.com/search?q=${encodeURIComponent(couponQuery)}`;
 
     res.setHeader("Cache-Control", "s-maxage=900, stale-while-revalidate=1800");
     res.status(200).json({
       tip,
       placeName,
-      source: "Google Places"
+      source: "Google Places",
+      couponTip,
+      couponSource: "Google Places + Google Search",
+      couponUrl
     });
   } catch (error) {
     console.error(error);

@@ -8,22 +8,22 @@
 - [x] TailWindの導入
 - [x] TypeScriptの導入
 - [x] 天気連動ミニ提案を Google Places で表示（失敗時はローカルプリセット）
-- [ ] クーポン/セール情報カードの追加
+- [x] クーポン/セール情報を「場所別お得ヒント」カード内に追加
 - [ ] ランチ相場・混雑ヒントの表示
 - [ ] 交通・移動お得情報の表示
 
 ## Vercel + Google本番化
-- [ ] Vercelアカウント作成（GitHubログイン）
-- [ ] `vestige/gdm` を Vercel に Import
-- [ ] Google Cloud プロジェクト作成
-- [ ] Google Cloud の課金（Billing）を有効化
-- [ ] `Places API` を有効化
-- [ ] APIキーを作成
-- [ ] APIキーの制限を設定（API制限: Places API）
-- [ ] Vercel の Environment Variables に `GOOGLE_MAPS_API_KEY` を追加
-- [ ] Vercel を再デプロイ
-- [ ] 本番URLで「場所別お得ヒント」が Google 由来で表示されるか確認
-- [ ] GitHub Pagesワークフローを停止するか判断（重複デプロイ対策）
+- [x] Vercelアカウント作成（GitHubログイン）
+- [x] `vestige/gdm` を Vercel に Import
+- [x] Google Cloud プロジェクト作成
+- [x] Google Cloud の課金（Billing）を有効化
+- [x] `Places API` を有効化
+- [x] APIキーを作成
+- [x] APIキーの制限を設定（API制限: Places API）
+- [x] Vercel の Environment Variables に `GOOGLE_MAPS_API_KEY` を追加
+- [x] Vercel を再デプロイ
+- [x] 本番URLで「場所別お得ヒント」が Google 由来で表示されるか確認
+- [x] GitHub Pagesワークフローは残して併用する
 
 ### memo
 > npm run dev
