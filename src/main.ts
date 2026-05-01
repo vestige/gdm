@@ -1,5 +1,5 @@
 import "./style.css";
-import { fortunes, luckyActions, luckyColors, quotes, trivia } from "./data";
+import { fortunes, luckyActions, luckyColors, miniChallengeCategories, quotes } from "./data";
 
 type OfficeLocation = {
   name: string;
@@ -22,59 +22,34 @@ const locations = {
 
 type LocationKey = keyof typeof locations;
 type WeatherType = "rainy" | "cloudy" | "sunny";
+type MoodLevel = 1 | 2 | 3 | 4 | 5;
+type MoodHistory = Record<string, MoodLevel>;
+type MoodLog = Record<string, MoodHistory>;
+type MoodStatusTone = "default" | "error" | "success";
+type MoodGraphEntry = {
+  label: string;
+  mood: MoodLevel | 0;
+};
 
 let selectedLocationKey: LocationKey = "tochigi";
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
-const USELESS_FACTS_API_URL = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en";
+const MOOD_LOG_STORAGE_KEY = "gdm:moodLog";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
 const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all";
 const QUOTE_API_ENDPOINT = "/api/quote";
-const DEAL_TIP_API_ENDPOINT = "/api/deal-tips";
-let latestTriviaText = "";
 let latestQuoteText = "";
-const localDealTips: Record<LocationKey, Record<WeatherType, string[]>> = {
-  tokyo: {
-    sunny: [
-      "多摩川沿いを10〜15分だけ歩くと、気分転換と運動をまとめてこなせます。",
-      "晴れの日は下丸子周辺でテイクアウトして外で食べると、ランチ満足度が上がりやすいです。",
-      "移動を1駅ぶんだけ徒歩にすると、交通費を抑えつつリフレッシュできます。"
-    ],
-    cloudy: [
-      "曇りの日は混雑ピーク前に買い物を済ませると、待ち時間を減らしやすいです。",
-      "気温差に備えて薄手の羽織りを持つと、余計な買い足しを防げます。",
-      "屋外と屋内を半々で使える予定にすると、天候変化にも柔軟に動けます。"
-    ],
-    rainy: [
-      "雨の日は駅直結・屋根のある動線を優先すると、傘トラブルや時間ロスを抑えられます。",
-      "外出はまとめて1回にすると、移動コストと濡れるストレスを減らせます。",
-      "屋内で休める場所を先に決めておくと、急な強雨でも無駄な出費を避けやすいです。"
-    ]
-  },
-  tochigi: {
-    sunny: [
-      "晴れの日は近場の公園方面へ短時間散歩すると、気分転換コスパが高いです。",
-      "明るい時間にまとめ買いを済ませると、夕方の移動回数を減らせます。",
-      "車移動前に寄り道先を1つに絞ると、ガソリン消費を抑えやすいです。"
-    ],
-    cloudy: [
-      "曇りの日は外出を短時間に区切ると、天気悪化時のリスクを減らせます。",
-      "気温に合わせて飲み物を持参すると、コンビニ立ち寄り回数を減らせます。",
-      "予定を近いエリアで固めると、移動の手間と時間を節約できます。"
-    ],
-    rainy: [
-      "雨の日は屋内中心の用事に切り替えると、移動コストを抑えやすいです。",
-      "買い物リストを先に作って1回で済ませると、雨の日の外出回数を減らせます。",
-      "出発前に駐車場所を決めると、雨の中の移動時間を短縮できます。"
-    ]
-  }
-};
+let currentMoodLog: MoodLog = {};
+let activeProfileName = "";
+const moodOptions = [
+  { value: 1, emoji: "😴", label: "低め" },
+  { value: 2, emoji: "😐", label: "ぼちぼち" },
+  { value: 3, emoji: "🙂", label: "ふつう" },
+  { value: 4, emoji: "😄", label: "よい" },
+  { value: 5, emoji: "🔥", label: "最高" }
+] as const satisfies ReadonlyArray<{ value: MoodLevel; emoji: string; label: string }>;
 
 const rainCodes = [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99];
 const cloudyCodes = [1, 2, 3, 45, 48];
-
-type UselessFactResponse = {
-  text?: string;
-};
 
 type TranslationResponse = {
   responseData?: {
@@ -97,15 +72,6 @@ type QuoteResponse = {
   author?: string;
 };
 
-type DealTipResponse = {
-  tip?: string;
-  placeName?: string;
-  source?: string;
-  couponTip?: string;
-  couponSource?: string;
-  couponUrl?: string;
-};
-
 function getElementByIdOrThrow<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
   if (!element) {
@@ -126,121 +92,318 @@ function hashString(str: string): number {
   return hash;
 }
 
-function getTodaySeed(name = ""): number {
-  const now = new Date();
-  const dateSeed = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+function getLocalDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDateSeed(date = new Date(), name = ""): number {
+  const dateSeed = Number(getLocalDateKey(date).replaceAll("-", ""));
   return dateSeed + hashString(name.trim());
+}
+
+function getTodaySeed(name = ""): number {
+  return getDateSeed(new Date(), name);
 }
 
 function pickBySeed<T>(array: T[], seed: number, offset = 0): T {
   return array[(seed + offset) % array.length];
 }
 
-function getWeatherLabel(weatherType: WeatherType): string {
-  const weatherLabel: Record<WeatherType, string> = {
-    sunny: "晴れ向け",
-    cloudy: "くもり向け",
-    rainy: "雨向け"
+function isMoodLevel(value: unknown): value is MoodLevel {
+  return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5;
+}
+
+function getMoodOption(mood: MoodLevel): (typeof moodOptions)[number] {
+  return moodOptions.find((option) => option.value === mood) ?? moodOptions[2];
+}
+
+function getTodayMiniChallenge(): { category: string; text: string } {
+  const category = pickBySeed(miniChallengeCategories, getTodaySeed("mini-challenge-category"), 13);
+  const text = pickBySeed(category.challenges, getTodaySeed(`mini-challenge-${category.category}`), 7);
+  return {
+    category: category.category,
+    text
   };
-  return weatherLabel[weatherType];
 }
 
-function setDealTipSourceLabel(source: string): void {
-  getElementByIdOrThrow<HTMLElement>("dealTipSource").textContent = `データソース: ${source}`;
+function loadMoodLog(): MoodLog {
+  try {
+    const stored = localStorage.getItem(MOOD_LOG_STORAGE_KEY);
+    if (!stored) {
+      return {};
+    }
+
+    const parsed = JSON.parse(stored) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const nextMoodLog: MoodLog = {};
+    for (const [profileName, moodHistory] of Object.entries(parsed)) {
+      if (!moodHistory || typeof moodHistory !== "object" || Array.isArray(moodHistory)) {
+        continue;
+      }
+
+      const nextMoodHistory: MoodHistory = {};
+      for (const [dateKey, moodValue] of Object.entries(moodHistory)) {
+        if (isMoodLevel(moodValue)) {
+          nextMoodHistory[dateKey] = moodValue;
+        }
+      }
+
+      if (Object.keys(nextMoodHistory).length > 0) {
+        nextMoodLog[profileName] = nextMoodHistory;
+      }
+    }
+    return nextMoodLog;
+  } catch (error) {
+    console.warn("気分ログの読み込みに失敗しました", error);
+    return {};
+  }
 }
 
-function setCouponSourceLabel(source: string): void {
-  getElementByIdOrThrow<HTMLElement>("couponSource").textContent = `データソース: ${source}`;
+function persistMoodLog(moodLog: MoodLog): boolean {
+  try {
+    localStorage.setItem(MOOD_LOG_STORAGE_KEY, JSON.stringify(moodLog));
+    return true;
+  } catch (error) {
+    console.warn("気分ログの保存に失敗しました", error);
+    return false;
+  }
 }
 
-function setCouponLink(url: string, label: string): void {
-  const link = getElementByIdOrThrow<HTMLAnchorElement>("couponLink");
-  const normalizedUrl = url.trim();
-  if (!normalizedUrl) {
-    link.classList.add("hidden");
-    link.removeAttribute("href");
-    link.textContent = "";
+function getRecentMoodEntries(moodHistory: MoodHistory): MoodGraphEntry[] {
+  const baseDate = new Date();
+  baseDate.setHours(12, 0, 0, 0);
+
+  const entries: MoodGraphEntry[] = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const date = new Date(baseDate);
+    date.setDate(baseDate.getDate() - offset);
+
+    entries.push({
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      mood: moodHistory[getLocalDateKey(date)] ?? 0
+    });
+  }
+
+  return entries;
+}
+
+function normalizeProfileName(name: string): string {
+  return name.trim();
+}
+
+function getActiveMoodHistory(): MoodHistory {
+  if (!activeProfileName) {
+    return {};
+  }
+
+  return currentMoodLog[activeProfileName] ?? {};
+}
+
+function renderMiniChallenge(): void {
+  const miniChallenge = getTodayMiniChallenge();
+  getElementByIdOrThrow<HTMLElement>("miniChallengeCategory").textContent = miniChallenge.category;
+  getElementByIdOrThrow<HTMLElement>("miniChallengeText").textContent = miniChallenge.text;
+}
+
+function getMoonPhaseInfo(date = new Date()): {
+  emoji: string;
+  name: string;
+  age: number;
+  illumination: number;
+  description: string;
+} {
+  const synodicMonth = 29.530588853;
+  const knownNewMoonUtc = Date.UTC(2000, 0, 6, 18, 14, 0);
+  const daysSinceKnownNewMoon = (date.getTime() - knownNewMoonUtc) / 86400000;
+  const moonAge = ((daysSinceKnownNewMoon % synodicMonth) + synodicMonth) % synodicMonth;
+  const normalizedPhase = moonAge / synodicMonth;
+  const illumination = Math.round(((1 - Math.cos(normalizedPhase * Math.PI * 2)) / 2) * 100);
+
+  const phaseIndex = Math.floor((normalizedPhase * 8) + 0.5) % 8;
+  const phaseInfo = [
+    {
+      emoji: "🌑",
+      name: "新月",
+      description: "月はほぼ見えない時期です。空はすっきり暗めで、星が見やすい日です。"
+    },
+    {
+      emoji: "🌒",
+      name: "満ち始めの月",
+      description: "細い月が少しずつ育っていく時期です。夕方の西の空で見つけやすいです。"
+    },
+    {
+      emoji: "🌓",
+      name: "上弦の月",
+      description: "月の半分ほどが明るく見える頃です。夜の前半に存在感があります。"
+    },
+    {
+      emoji: "🌔",
+      name: "満月前の月",
+      description: "かなり明るい月です。夜空でも見つけやすく、光もはっきり感じられます。"
+    },
+    {
+      emoji: "🌕",
+      name: "満月",
+      description: "月がもっとも丸く明るく見える頃です。空を見上げる楽しさが強い日です。"
+    },
+    {
+      emoji: "🌖",
+      name: "欠け始めの月",
+      description: "満月を過ぎて、少しずつ細くなっていく時期です。夜更けから朝方に目立ちます。"
+    },
+    {
+      emoji: "🌗",
+      name: "下弦の月",
+      description: "月の半分ほどが見える頃です。深夜から朝にかけて空に残りやすいです。"
+    },
+    {
+      emoji: "🌘",
+      name: "新月前の月",
+      description: "かなり細い月です。早朝の東の空で見えることが多い時期です。"
+    }
+  ] as const;
+
+  return {
+    ...phaseInfo[phaseIndex],
+    age: moonAge,
+    illumination
+  };
+}
+
+function renderMoonPhase(): void {
+  const moonInfo = getMoonPhaseInfo();
+  getElementByIdOrThrow<HTMLElement>("moonEmoji").textContent = moonInfo.emoji;
+  getElementByIdOrThrow<HTMLElement>("moonPhaseName").textContent = moonInfo.name;
+  getElementByIdOrThrow<HTMLElement>("moonDescription").textContent = moonInfo.description;
+  getElementByIdOrThrow<HTMLElement>("moonAge").textContent = `${moonInfo.age.toFixed(1)}`;
+  getElementByIdOrThrow<HTMLElement>("moonIllumination").textContent = `${moonInfo.illumination}%くらい`;
+}
+
+function setMoodStatus(message: string, tone: MoodStatusTone): void {
+  const moodStatus = getElementByIdOrThrow<HTMLElement>("moodSaveStatus");
+  moodStatus.textContent = message;
+  moodStatus.classList.remove("text-slate-500", "text-emerald-600", "text-rose-500");
+
+  if (tone === "success") {
+    moodStatus.classList.add("text-emerald-600");
     return;
   }
-  link.href = normalizedUrl;
-  link.target = "_blank";
-  link.rel = "noreferrer noopener";
-  link.textContent = label;
-  link.classList.remove("hidden");
-}
 
-function updateLocalCouponTip(weatherType: WeatherType): void {
-  const location = locations[selectedLocationKey];
-  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
-  const seed = getTodaySeed(`${selectedLocationKey}-${weatherType}-${nameInput.value}-coupon`);
-  const weatherLabel = getWeatherLabel(weatherType);
-  const localCouponCandidates: string[] = [
-    `${location.name}の${weatherLabel}: 公式アプリのクーポン欄と店頭の週替わりセールを先に確認してから移動すると、ムダ買いを減らしやすいです。`,
-    `${location.name}の${weatherLabel}: 近場のスーパーとドラッグストアの特売日を1回で回れる順に並べると、時間と出費を抑えやすいです。`,
-    `${location.name}の${weatherLabel}: 飲食店はランチセット・時間帯割引が出ることがあるので、出発前に公式情報を1件だけチェックするのがおすすめです。`
-  ];
-  const couponTip = pickBySeed(localCouponCandidates, seed, 23);
-  getElementByIdOrThrow<HTMLElement>("couponTip").textContent = couponTip;
-  setCouponSourceLabel("ローカルプリセット（フォールバック）");
-  setCouponLink("", "");
-}
-
-function updateLocalDealTip(weatherType: WeatherType): void {
-  const location = locations[selectedLocationKey];
-  const tips = localDealTips[selectedLocationKey][weatherType];
-  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
-  const tipSeed = getTodaySeed(`${selectedLocationKey}-${weatherType}-${nameInput.value}`);
-  const tip = pickBySeed(tips, tipSeed, 17);
-  setDealTipSourceLabel("ローカルプリセット（フォールバック）");
-
-  getElementByIdOrThrow<HTMLElement>("localDealTip").textContent =
-    `${location.name}の${getWeatherLabel(weatherType)}: ${tip}`;
-  updateLocalCouponTip(weatherType);
-}
-
-async function loadDealTip(weatherType: WeatherType): Promise<void> {
-  const location = locations[selectedLocationKey];
-  const dealTipElement = getElementByIdOrThrow<HTMLElement>("localDealTip");
-  const couponTipElement = getElementByIdOrThrow<HTMLElement>("couponTip");
-  setDealTipSourceLabel("Google Places");
-  setCouponSourceLabel("Google Places");
-  dealTipElement.textContent = `${location.name}の${getWeatherLabel(weatherType)}お得ヒントを検索中です...`;
-  couponTipElement.textContent = `${location.name}のクーポン/セール情報を検索中です...`;
-  setCouponLink("", "");
-
-  try {
-    const params = new URLSearchParams({
-      lat: String(location.latitude),
-      lon: String(location.longitude),
-      weather: weatherType
-    });
-    const response = await fetch(`${DEAL_TIP_API_ENDPOINT}?${params.toString()}`);
-    if (!response.ok) {
-      throw new Error(`deal-tips APIエラー: ${response.status}`);
-    }
-
-    const data = (await response.json()) as DealTipResponse;
-    const tip = typeof data.tip === "string" ? data.tip.trim() : "";
-    const placeName = typeof data.placeName === "string" ? data.placeName.trim() : "";
-    const source = typeof data.source === "string" ? data.source.trim() : "";
-    const couponTip = typeof data.couponTip === "string" ? data.couponTip.trim() : "";
-    const couponSource = typeof data.couponSource === "string" ? data.couponSource.trim() : "";
-    const couponUrl = typeof data.couponUrl === "string" ? data.couponUrl.trim() : "";
-    if (!tip) {
-      throw new Error("deal-tips APIレスポンスに tip がありません");
-    }
-    setDealTipSourceLabel(source || "Google Places");
-    setCouponSourceLabel(couponSource || source || "Google Places");
-
-    dealTipElement.textContent = placeName
-      ? `${location.name}の${getWeatherLabel(weatherType)}: ${placeName} - ${tip}`
-      : `${location.name}の${getWeatherLabel(weatherType)}: ${tip}`;
-    couponTipElement.textContent = couponTip || `${location.name}周辺のセール情報を検索してみてください。`;
-    setCouponLink(couponUrl, "クーポン/セールを検索");
-  } catch (error) {
-    console.error(error);
-    updateLocalDealTip(weatherType);
+  if (tone === "error") {
+    moodStatus.classList.add("text-rose-500");
+    return;
   }
+
+  moodStatus.classList.add("text-slate-500");
+}
+
+function updateMoodSelection(selectedMood: MoodLevel | undefined): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-mood-value]").forEach((button) => {
+    const rawMoodValue = Number(button.dataset.moodValue);
+    const isSelected = isMoodLevel(rawMoodValue) && rawMoodValue === selectedMood;
+    button.dataset.selected = String(isSelected);
+    button.setAttribute("aria-pressed", String(isSelected));
+  });
+}
+
+function createMoodGraphItem(entry: MoodGraphEntry): HTMLElement {
+  const isEmpty = entry.mood === 0;
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "flex min-w-0 flex-col items-center gap-2";
+
+  const chartArea = document.createElement("div");
+  chartArea.className = "flex h-24 w-full items-end justify-center rounded-2xl bg-slate-50/90 px-2 py-2";
+
+  const bar = document.createElement("div");
+  bar.className = "mood-graph-bar flex h-full w-full max-w-9 items-end justify-center rounded-xl";
+  bar.dataset.empty = String(isEmpty);
+
+  const fill = document.createElement("div");
+  fill.className = "mood-graph-fill w-full rounded-lg";
+  fill.dataset.empty = String(isEmpty);
+  fill.style.height = isEmpty ? "12%" : `${(entry.mood / 5) * 100}%`;
+
+  const score = document.createElement("p");
+  score.className = `text-sm font-semibold ${isEmpty ? "text-slate-400" : "text-slate-700"}`;
+  score.textContent = isEmpty ? "-" : String(entry.mood);
+
+  const label = document.createElement("p");
+  label.className = "text-[11px] text-slate-500";
+  label.textContent = entry.label;
+
+  bar.append(fill);
+  chartArea.append(bar);
+  wrapper.append(chartArea, score, label);
+
+  return wrapper;
+}
+
+function renderMoodGraph(): void {
+  const moodGraph = getElementByIdOrThrow<HTMLElement>("moodGraph");
+  const graphItems = getRecentMoodEntries(getActiveMoodHistory()).map((entry) => createMoodGraphItem(entry));
+  moodGraph.replaceChildren(...graphItems);
+}
+
+function renderMoodSection(status?: { text: string; tone: MoodStatusTone }): void {
+  const todayMood = getActiveMoodHistory()[getLocalDateKey()];
+  const moodSelectedLabel = getElementByIdOrThrow<HTMLElement>("moodSelectedLabel");
+
+  updateMoodSelection(todayMood);
+  renderMoodGraph();
+
+  if (!activeProfileName) {
+    moodSelectedLabel.textContent = "名前を入れてから記録できます";
+  } else if (todayMood) {
+    const moodOption = getMoodOption(todayMood);
+    moodSelectedLabel.textContent = `${activeProfileName}さんの今日の気分: ${moodOption.emoji} ${moodOption.label}`;
+  } else {
+    moodSelectedLabel.textContent = `${activeProfileName}さんはまだ記録していません`;
+  }
+
+  if (status) {
+    setMoodStatus(status.text, status.tone);
+    return;
+  }
+
+  setMoodStatus(
+    todayMood
+      ? "保存済みです。選び直しもできます"
+      : activeProfileName
+        ? "1〜5で今朝の気分を記録できます"
+        : "名前を入れてから記録できます",
+    "default"
+  );
+}
+
+function handleMoodSelection(mood: MoodLevel): void {
+  if (!activeProfileName) {
+    renderMoodSection({ text: "名前を入れてから記録できます", tone: "error" });
+    return;
+  }
+
+  const todayKey = getLocalDateKey();
+  const moodHistory = getActiveMoodHistory();
+  currentMoodLog = {
+    ...currentMoodLog,
+    [activeProfileName]: {
+      ...moodHistory,
+      [todayKey]: mood
+    }
+  };
+
+  const isSaved = persistMoodLog(currentMoodLog);
+  renderMoodSection(
+    isSaved
+      ? { text: "今日の気分を保存しました", tone: "success" }
+      : { text: "この環境では気分を保存できませんでした", tone: "error" }
+  );
 }
 
 function setTodayLabel(): void {
@@ -291,7 +454,6 @@ function drawFortune(): void {
   getElementByIdOrThrow<HTMLElement>("luckyColor").textContent = color;
   getElementByIdOrThrow<HTMLElement>("luckyAction").textContent = action;
   getElementByIdOrThrow<HTMLElement>("quoteText").textContent = latestQuoteText || fallbackQuote;
-  getElementByIdOrThrow<HTMLElement>("triviaText").textContent = latestTriviaText || "豆知識を取得中です...";
 
   replayCardAnimation(getElementByIdOrThrow<HTMLElement>("fortuneCard"));
 }
@@ -321,34 +483,6 @@ async function loadQuote(name = ""): Promise<void> {
     const fallbackQuote = pickBySeed(quotes, getTodaySeed(name || nameInput.value), 7);
     latestQuoteText = fallbackQuote;
     quoteText.textContent = fallbackQuote;
-  }
-}
-
-async function loadUselessFact(): Promise<void> {
-  const triviaText = getElementByIdOrThrow<HTMLElement>("triviaText");
-  triviaText.textContent = "豆知識を取得中です...";
-
-  try {
-    const response = await fetch(USELESS_FACTS_API_URL);
-    if (!response.ok) {
-      throw new Error(`uselessfacts APIエラー: ${response.status}`);
-    }
-
-    const data = (await response.json()) as UselessFactResponse;
-    const factText = typeof data.text === "string" ? data.text.trim() : "";
-    if (!factText) {
-      throw new Error("uselessfacts のレスポンスに text がありません");
-    }
-
-    const translatedFactText = await translateTextToJapanese(factText);
-    latestTriviaText = translatedFactText || factText;
-    triviaText.textContent = latestTriviaText;
-  } catch (error) {
-    console.error(error);
-    const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
-    const fallback = pickBySeed(trivia, getTodaySeed(nameInput.value), 11);
-    latestTriviaText = fallback;
-    triviaText.textContent = fallback;
   }
 }
 
@@ -543,9 +677,7 @@ async function loadWeather(): Promise<void> {
     currentTemp.textContent = typeof currentTemperature === "number" ? `${currentTemperature} ℃` : "取得できませんでした";
     weatherEmoji.textContent = weatherCodeToEmoji(currentCode);
     weatherStatus.textContent = `${officeLocation.name} の予報です`;
-    const weatherType = classifyWeatherForBackground(currentCode);
-    setWeatherBackground(weatherType);
-    await loadDealTip(weatherType);
+    setWeatherBackground(classifyWeatherForBackground(currentCode));
 
     if (eveningIndex < 0) {
       eveningTemp.textContent = "取得できませんでした";
@@ -568,22 +700,38 @@ async function loadWeather(): Promise<void> {
     eveningRain.textContent = "---";
     weatherComment.textContent = "通信状況を確認して、もう一度読み込んでみてください。";
     setWeatherBackground("cloudy");
-    updateLocalDealTip("cloudy");
   }
+}
+
+function showMorningCards(): void {
+  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
+  nameInput.setCustomValidity("");
+  const submittedName = normalizeProfileName(nameInput.value);
+  if (!submittedName) {
+    nameInput.setCustomValidity("名前を入れてください");
+    nameInput.reportValidity();
+    nameInput.setCustomValidity("");
+    return;
+  }
+
+  activeProfileName = submittedName;
+  drawFortune();
+  renderMiniChallenge();
+  renderMoonPhase();
+  renderMoodSection();
+  revealResults();
+  void loadQuote(submittedName);
 }
 
 function setupEvents(): void {
   const nameForm = getElementByIdOrThrow<HTMLFormElement>("nameForm");
   const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
+  const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
 
   nameForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const name = nameInput.value;
-    drawFortune();
-    revealResults();
-    void loadQuote(name);
-    void loadUselessFact();
+    showMorningCards();
   });
 
   locationSelect.addEventListener("change", () => {
@@ -599,12 +747,18 @@ function setupEvents(): void {
   nameInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
-      const name = nameInput.value;
-      drawFortune();
-      revealResults();
-      void loadQuote(name);
-      void loadUselessFact();
+      showMorningCards();
     }
+  });
+
+  moodButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const rawMoodValue = Number(button.dataset.moodValue);
+      if (!isMoodLevel(rawMoodValue)) {
+        return;
+      }
+      handleMoodSelection(rawMoodValue);
+    });
   });
 }
 
@@ -619,10 +773,11 @@ function init(): void {
   }
 
   setTodayLabel();
+  renderMoonPhase();
+  currentMoodLog = loadMoodLog();
   setupEvents();
   void loadWeather();
   void loadQuote();
-  void loadUselessFact();
   void loadOnThisDay();
 }
 
