@@ -28,7 +28,29 @@
             >
               <option value="tokyo">東京都下丸子付近</option>
               <option value="tochigi" selected>栃木県大田原市付近</option>
+              <option value="custom">入力した場所を使う</option>
             </select>
+          </div>
+          <div class="rounded-2xl bg-slate-50 p-4 space-y-3">
+            <label for="customLocationInput" class="block text-sm text-slate-600">または場所を入力して使う</label>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <input
+                id="customLocationInput"
+                type="text"
+                placeholder="例: 渋谷区、横浜市、仙台駅"
+                class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+              <button
+                type="button"
+                id="customLocationButton"
+                class="rounded-2xl bg-slate-800 text-white px-4 py-3 font-medium shadow-sm hover:bg-slate-700 active:scale-95 transition"
+              >
+                この場所を使う
+              </button>
+            </div>
+            <p id="locationStatus" class="text-xs text-slate-500">
+              現在: 栃木県大田原市付近（プリセット）
+            </p>
           </div>
           <input
             id="nameInput"
