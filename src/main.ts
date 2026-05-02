@@ -22,18 +22,54 @@ const locations = {
 
 type LocationKey = keyof typeof locations;
 type WeatherType = "rainy" | "cloudy" | "sunny";
+type LocationMode = "preset" | "custom";
 type MoodLevel = 1 | 2 | 3 | 4 | 5;
 type MoodHistory = Record<string, MoodLevel>;
 type MoodLog = Record<string, MoodHistory>;
 type MoodStatusTone = "default" | "error" | "success";
+type LocationStatusTone = "default" | "error" | "success";
 type MoodGraphEntry = {
   label: string;
   mood: MoodLevel | 0;
 };
+type SavedLocationState =
+  | {
+      mode: "preset";
+      presetKey: LocationKey;
+    }
+  | {
+      mode: "custom";
+      location: OfficeLocation;
+    };
+type GeocodingResult = {
+  name?: string;
+  latitude?: number;
+  longitude?: number;
+  admin1?: string;
+  country?: string;
+};
+type GeocodingResponse = {
+  results?: GeocodingResult[];
+  error?: boolean;
+  reason?: string;
+};
+type GsiGeocodingFeature = {
+  geometry?: {
+    coordinates?: [number, number];
+  };
+  properties?: {
+    title?: string;
+  };
+};
 
 let selectedLocationKey: LocationKey = "tochigi";
+let activeWeatherLocation: OfficeLocation = locations[selectedLocationKey];
+let activeLocationMode: LocationMode = "preset";
+let customWeatherLocation: OfficeLocation | null = null;
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 const MOOD_LOG_STORAGE_KEY = "gdm:moodLog";
+const GSI_GEOCODING_API_ENDPOINT = "https://msearch.gsi.go.jp/address-search/AddressSearch";
+const GEOCODING_API_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
 const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all";
 const QUOTE_API_ENDPOINT = "/api/quote";
@@ -84,6 +120,19 @@ function isLocationKey(value: string): value is LocationKey {
   return value in locations;
 }
 
+function isOfficeLocation(value: unknown): value is OfficeLocation {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<OfficeLocation>;
+  return (
+    typeof candidate.name === "string" &&
+    typeof candidate.latitude === "number" &&
+    typeof candidate.longitude === "number"
+  );
+}
+
 function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i += 1) {
@@ -118,6 +167,239 @@ function isMoodLevel(value: unknown): value is MoodLevel {
 
 function getMoodOption(mood: MoodLevel): (typeof moodOptions)[number] {
   return moodOptions.find((option) => option.value === mood) ?? moodOptions[2];
+}
+
+function setLocationStatus(message: string, tone: LocationStatusTone = "default"): void {
+  const locationStatus = getElementByIdOrThrow<HTMLElement>("locationStatus");
+  locationStatus.textContent = message;
+  locationStatus.classList.remove("text-slate-500", "text-emerald-600", "text-rose-500");
+
+  if (tone === "success") {
+    locationStatus.classList.add("text-emerald-600");
+    return;
+  }
+
+  if (tone === "error") {
+    locationStatus.classList.add("text-rose-500");
+    return;
+  }
+
+  locationStatus.classList.add("text-slate-500");
+}
+
+function formatActiveLocationStatus(): string {
+  if (activeLocationMode === "custom") {
+    return `現在: ${activeWeatherLocation.name}（入力場所）`;
+  }
+
+  return `現在: ${activeWeatherLocation.name}（プリセット）`;
+}
+
+function setLocationButtonBusy(isBusy: boolean): void {
+  const customLocationButton = getElementByIdOrThrow<HTMLButtonElement>("customLocationButton");
+  customLocationButton.disabled = isBusy;
+  customLocationButton.textContent = isBusy ? "検索中..." : "この場所を使う";
+}
+
+function setActivePresetLocation(locationKey: LocationKey): void {
+  selectedLocationKey = locationKey;
+  activeLocationMode = "preset";
+  activeWeatherLocation = locations[locationKey];
+  getElementByIdOrThrow<HTMLSelectElement>("locationSelect").value = locationKey;
+  setLocationStatus(formatActiveLocationStatus());
+}
+
+function setActiveCustomLocation(location: OfficeLocation): void {
+  customWeatherLocation = location;
+  activeLocationMode = "custom";
+  activeWeatherLocation = location;
+  getElementByIdOrThrow<HTMLSelectElement>("locationSelect").value = "custom";
+  getElementByIdOrThrow<HTMLInputElement>("customLocationInput").value = location.name;
+  setLocationStatus(formatActiveLocationStatus(), "success");
+}
+
+function buildCustomLocationLabel(result: GeocodingResult, query: string): string {
+  const baseName = typeof result.name === "string" && result.name.trim() ? result.name.trim() : query;
+  const extraParts = [result.admin1, result.country]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .filter((value) => value.trim() !== baseName);
+
+  return extraParts.length > 0 ? `${baseName} (${extraParts.join(" / ")})` : baseName;
+}
+
+function normalizeLocationQuery(query: string): string {
+  return query.normalize("NFKC").replace(/\s+/gu, " ").trim();
+}
+
+function containsJapaneseCharacters(value: string): boolean {
+  return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value);
+}
+
+function stripAdministrativeSuffix(value: string): string {
+  return value.replace(/[都道府県市区町村]$/u, "");
+}
+
+function buildLocationSearchQueries(query: string): string[] {
+  const normalized = normalizeLocationQuery(query);
+  const compact = normalized.replace(/\s+/gu, "");
+  const queries = new Set<string>();
+
+  const addQuery = (value: string): void => {
+    const nextValue = normalizeLocationQuery(value).replace(/\s+/gu, "");
+    if (nextValue.length >= 2) {
+      queries.add(nextValue);
+    }
+  };
+
+  addQuery(normalized);
+  addQuery(compact);
+
+  let suffixStripped = compact;
+  while (suffixStripped.length >= 2) {
+    const nextValue = stripAdministrativeSuffix(suffixStripped);
+    if (nextValue === suffixStripped) {
+      break;
+    }
+    addQuery(nextValue);
+    suffixStripped = nextValue;
+  }
+
+  for (const separator of ["都", "道", "府", "県", "市", "区"] as const) {
+    const splitIndex = compact.lastIndexOf(separator);
+    if (splitIndex >= 0 && splitIndex < compact.length - 1) {
+      addQuery(compact.slice(splitIndex + 1));
+      addQuery(stripAdministrativeSuffix(compact.slice(splitIndex + 1)));
+    }
+  }
+
+  return Array.from(queries);
+}
+
+function scoreGeocodingResult(result: GeocodingResult, query: string): number {
+  const comparableQuery = normalizeLocationQuery(query).replace(/\s+/gu, "");
+  const candidates = [result.name, result.admin1, result.country]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => normalizeLocationQuery(value).replace(/\s+/gu, ""));
+
+  if (candidates.includes(comparableQuery)) {
+    return 100;
+  }
+
+  if (candidates.some((value) => value.startsWith(comparableQuery))) {
+    return 80;
+  }
+
+  if (candidates.some((value) => value.includes(comparableQuery))) {
+    return 60;
+  }
+
+  return 0;
+}
+
+function scoreCandidateStrings(values: string[], query: string): number {
+  const comparableQuery = normalizeLocationQuery(query).replace(/\s+/gu, "");
+  const candidates = values
+    .map((value) => normalizeLocationQuery(value).replace(/\s+/gu, ""))
+    .filter((value) => value.length > 0);
+
+  if (candidates.includes(comparableQuery)) {
+    return 100;
+  }
+
+  if (candidates.some((value) => value.startsWith(comparableQuery))) {
+    return 80;
+  }
+
+  if (candidates.some((value) => value.includes(comparableQuery))) {
+    return 60;
+  }
+
+  return 0;
+}
+
+async function requestOpenMeteoGeocoding(query: string): Promise<GeocodingResponse> {
+  const params = new URLSearchParams({
+    name: query,
+    count: "5",
+    countryCode: "JP",
+    language: "ja",
+    format: "json"
+  });
+  const response = await fetch(`${GEOCODING_API_ENDPOINT}?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`場所検索APIエラー: ${response.status}`);
+  }
+
+  return (await response.json()) as GeocodingResponse;
+}
+
+async function requestGsiGeocoding(query: string): Promise<GsiGeocodingFeature[]> {
+  const params = new URLSearchParams({
+    q: query
+  });
+  const response = await fetch(`${GSI_GEOCODING_API_ENDPOINT}?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`国土地理院 地名検索APIエラー: ${response.status}`);
+  }
+
+  const data = (await response.json()) as unknown;
+  return Array.isArray(data) ? (data as GsiGeocodingFeature[]) : [];
+}
+
+function pickBestGsiResult(results: GsiGeocodingFeature[], query: string): OfficeLocation | null {
+  const bestResult = results
+    .filter((result) => Array.isArray(result.geometry?.coordinates) && typeof result.properties?.title === "string")
+    .sort((left, right) => {
+      const leftTitle = left.properties?.title ?? "";
+      const rightTitle = right.properties?.title ?? "";
+      return scoreCandidateStrings([rightTitle], query) - scoreCandidateStrings([leftTitle], query);
+    })[0];
+
+  const coordinates = bestResult?.geometry?.coordinates;
+  const title = bestResult?.properties?.title?.trim();
+  if (!coordinates || typeof coordinates[0] !== "number" || typeof coordinates[1] !== "number" || !title) {
+    return null;
+  }
+
+  return {
+    name: title,
+    latitude: coordinates[1],
+    longitude: coordinates[0]
+  };
+}
+
+async function searchCustomLocation(query: string): Promise<OfficeLocation> {
+  const searchQueries = buildLocationSearchQueries(query);
+
+  for (const searchQuery of searchQueries) {
+    if (containsJapaneseCharacters(searchQuery)) {
+      try {
+        const gsiResults = await requestGsiGeocoding(searchQuery);
+        const gsiLocation = pickBestGsiResult(gsiResults, searchQuery);
+        if (gsiLocation) {
+          return gsiLocation;
+        }
+      } catch (error) {
+        console.warn("国土地理院の場所検索に失敗しました", error);
+      }
+    }
+
+    const data = await requestOpenMeteoGeocoding(searchQuery);
+    const candidates = Array.isArray(data.results) ? data.results : [];
+    const bestResult = candidates
+      .filter((result) => typeof result.latitude === "number" && typeof result.longitude === "number")
+      .sort((left, right) => scoreGeocodingResult(right, searchQuery) - scoreGeocodingResult(left, searchQuery))[0];
+
+    if (bestResult && typeof bestResult.latitude === "number" && typeof bestResult.longitude === "number") {
+      return {
+        name: buildCustomLocationLabel(bestResult, query),
+        latitude: bestResult.latitude,
+        longitude: bestResult.longitude
+      };
+    }
+  }
+
+  throw new Error("場所が見つかりませんでした");
 }
 
 function getTodayMiniChallenge(): { category: string; text: string } {
@@ -609,21 +891,52 @@ function setWeatherBackground(type: "rainy" | "cloudy" | "sunny"): void {
   body.classList.add("bg-weather-sunny");
 }
 
-function loadSavedLocation(): LocationKey {
+function loadSavedLocationState(): SavedLocationState {
   try {
     const stored = localStorage.getItem(LOCATION_STORAGE_KEY);
-    if (stored && isLocationKey(stored)) {
-      return stored;
+    if (!stored) {
+      return {
+        mode: "preset",
+        presetKey: selectedLocationKey
+      };
+    }
+
+    if (isLocationKey(stored)) {
+      return {
+        mode: "preset",
+        presetKey: stored
+      };
+    }
+
+    const parsed = JSON.parse(stored) as unknown;
+    if (parsed && typeof parsed === "object" && "mode" in parsed) {
+      const nextState = parsed as Partial<SavedLocationState>;
+      if (nextState.mode === "preset" && typeof nextState.presetKey === "string" && isLocationKey(nextState.presetKey)) {
+        return {
+          mode: "preset",
+          presetKey: nextState.presetKey
+        };
+      }
+      if (nextState.mode === "custom" && isOfficeLocation(nextState.location)) {
+        return {
+          mode: "custom",
+          location: nextState.location
+        };
+      }
     }
   } catch (error) {
     console.warn("場所の保存データを読み込めませんでした", error);
   }
-  return selectedLocationKey;
+
+  return {
+    mode: "preset",
+    presetKey: selectedLocationKey
+  };
 }
 
-function saveLocation(locationKey: LocationKey): void {
+function saveLocationState(locationState: SavedLocationState): void {
   try {
-    localStorage.setItem(LOCATION_STORAGE_KEY, locationKey);
+    localStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify(locationState));
   } catch (error) {
     console.warn("場所の保存に失敗しました", error);
   }
@@ -648,7 +961,7 @@ async function loadWeather(): Promise<void> {
   const eveningRain = getElementByIdOrThrow<HTMLElement>("eveningRain");
   const weatherComment = getElementByIdOrThrow<HTMLElement>("weatherComment");
   const weatherEmoji = getElementByIdOrThrow<HTMLElement>("weatherEmoji");
-  const officeLocation = locations[selectedLocationKey];
+  const officeLocation = activeWeatherLocation;
 
   try {
     weatherStatus.textContent = `${officeLocation.name} の天気を取得中です...`;
@@ -703,6 +1016,37 @@ async function loadWeather(): Promise<void> {
   }
 }
 
+async function useCustomLocation(): Promise<void> {
+  const customLocationInput = getElementByIdOrThrow<HTMLInputElement>("customLocationInput");
+  customLocationInput.setCustomValidity("");
+  const query = customLocationInput.value.trim();
+
+  if (!query) {
+    customLocationInput.setCustomValidity("場所を入力してください");
+    customLocationInput.reportValidity();
+    customLocationInput.setCustomValidity("");
+    return;
+  }
+
+  setLocationButtonBusy(true);
+  setLocationStatus(`「${query}」を検索しています...`);
+
+  try {
+    const customLocation = await searchCustomLocation(query);
+    setActiveCustomLocation(customLocation);
+    saveLocationState({
+      mode: "custom",
+      location: customLocation
+    });
+    void loadWeather();
+  } catch (error) {
+    console.error(error);
+    setLocationStatus("場所を見つけられませんでした。別の書き方でも試してみてください", "error");
+  } finally {
+    setLocationButtonBusy(false);
+  }
+}
+
 function showMorningCards(): void {
   const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
   nameInput.setCustomValidity("");
@@ -727,6 +1071,8 @@ function setupEvents(): void {
   const nameForm = getElementByIdOrThrow<HTMLFormElement>("nameForm");
   const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
+  const customLocationInput = getElementByIdOrThrow<HTMLInputElement>("customLocationInput");
+  const customLocationButton = getElementByIdOrThrow<HTMLButtonElement>("customLocationButton");
   const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
 
   nameForm.addEventListener("submit", (event) => {
@@ -736,12 +1082,42 @@ function setupEvents(): void {
 
   locationSelect.addEventListener("change", () => {
     const nextLocation = locationSelect.value;
+    if (nextLocation === "custom") {
+      if (!customWeatherLocation) {
+        setLocationStatus("まず下の入力欄から場所を追加してください", "error");
+        locationSelect.value = selectedLocationKey;
+        return;
+      }
+
+      setActiveCustomLocation(customWeatherLocation);
+      saveLocationState({
+        mode: "custom",
+        location: customWeatherLocation
+      });
+      void loadWeather();
+      return;
+    }
+
     if (!isLocationKey(nextLocation)) {
       return;
     }
-    selectedLocationKey = nextLocation;
-    saveLocation(nextLocation);
+    setActivePresetLocation(nextLocation);
+    saveLocationState({
+      mode: "preset",
+      presetKey: nextLocation
+    });
     void loadWeather();
+  });
+
+  customLocationButton.addEventListener("click", () => {
+    void useCustomLocation();
+  });
+
+  customLocationInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void useCustomLocation();
+    }
   });
 
   nameInput.addEventListener("keydown", (event) => {
@@ -764,12 +1140,13 @@ function setupEvents(): void {
 
 function init(): void {
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
-  const savedLocation = loadSavedLocation();
-  if (isLocationKey(savedLocation)) {
-    selectedLocationKey = savedLocation;
-    locationSelect.value = savedLocation;
+  const savedLocationState = loadSavedLocationState();
+  if (savedLocationState.mode === "custom") {
+    setActiveCustomLocation(savedLocationState.location);
+  } else if (isLocationKey(savedLocationState.presetKey)) {
+    setActivePresetLocation(savedLocationState.presetKey);
   } else if (isLocationKey(locationSelect.value)) {
-    selectedLocationKey = locationSelect.value;
+    setActivePresetLocation(locationSelect.value);
   }
 
   setTodayLabel();
