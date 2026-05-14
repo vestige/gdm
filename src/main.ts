@@ -1170,6 +1170,108 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+const LEAVING_NOTE_STORAGE_KEY = "gdm:leavingNoteLog";
+const LEAVING_REMINDER_HOUR = 16;
+const LEAVING_REMINDER_MINUTE = 0;
+
+function getLeavingNoteLog(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(LEAVING_NOTE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch (e) {
+    console.warn("帰る前のひとことの読み込み失敗", e);
+    return {};
+  }
+}
+
+function saveLeavingNoteLog(log: Record<string, string>) {
+  try {
+    localStorage.setItem(LEAVING_NOTE_STORAGE_KEY, JSON.stringify(log));
+  } catch (e) {
+    console.warn("帰る前のひとことの保存失敗", e);
+  }
+}
+
+function getTodayLeavingNote(): string {
+  const log = getLeavingNoteLog();
+  return log[getLocalDateKey()] || "";
+}
+
+function getYesterdayLeavingNote(): string {
+  const log = getLeavingNoteLog();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  return log[getLocalDateKey(yesterday)] || "";
+}
+
+function isLeavingTime(): boolean {
+  const now = new Date();
+  return now.getHours() > LEAVING_REMINDER_HOUR || (now.getHours() === LEAVING_REMINDER_HOUR && now.getMinutes() >= LEAVING_REMINDER_MINUTE);
+}
+
+function renderLeavingNoteCard() {
+  const card = document.getElementById("leavingNoteCard");
+  const input = document.getElementById("leavingNoteInput") as HTMLTextAreaElement | null;
+  const status = document.getElementById("leavingNoteStatus");
+  const yesterday = document.getElementById("leavingNoteYesterday");
+  const icon = document.getElementById("leavingNoteIcon");
+  const title = document.getElementById("leavingNoteTitle");
+  const pulse = document.getElementById("leavingNotePulse");
+  if (!card || !input || !status || !yesterday || !icon || !title || !pulse) return;
+
+  // 復元
+  input.value = getTodayLeavingNote();
+  status.textContent = "";
+  const yNote = getYesterdayLeavingNote();
+  yesterday.textContent = yNote ? `昨日: ${yNote}` : "";
+
+  // 強調表示
+  if (isLeavingTime()) {
+    card.classList.add("leaving-note-highlight");
+    title.classList.add("leaving-note-title-highlight");
+    icon.classList.add("leaving-note-icon-highlight");
+    pulse.classList.remove("hidden");
+    pulse.textContent = "そろそろ帰る前のひとことを確認しましょう";
+  } else {
+    card.classList.remove("leaving-note-highlight");
+    title.classList.remove("leaving-note-title-highlight");
+    icon.classList.remove("leaving-note-icon-highlight");
+    pulse.classList.add("hidden");
+    pulse.textContent = "";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderLeavingNoteCard();
+  const form = document.getElementById("leavingNoteForm");
+  const input = document.getElementById("leavingNoteInput") as HTMLTextAreaElement | null;
+  const status = document.getElementById("leavingNoteStatus");
+  if (form && input && status) {
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const value = input.value.trim();
+      if (!value) {
+        status.textContent = "";
+        return;
+      }
+      if (value.length > 100) {
+        status.textContent = "100文字以内で入力してください";
+        return;
+      }
+      const log = getLeavingNoteLog();
+      log[getLocalDateKey()] = value;
+      saveLeavingNoteLog(log);
+      status.textContent = "保存しました";
+      renderLeavingNoteCard();
+    });
+  }
+  // 16:00以降の強調を毎分チェック
+  setInterval(renderLeavingNoteCard, 60 * 1000);
+});
+
 function init(): void {
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
   const savedLocationState = loadSavedLocationState();
