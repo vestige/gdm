@@ -245,24 +245,6 @@
               読み込み中...
             </p>
           </section>
-
-          <section id="leavingNoteCard" class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up transition-all">
-            <div class="flex items-center justify-between mb-4">
-              <div class="flex items-center gap-2">
-                <span id="leavingNoteIcon" class="text-2xl">📝</span>
-                <h2 id="leavingNoteTitle" class="text-xl font-bold">帰る前のひとこと</h2>
-              </div>
-              <span id="leavingNotePulse" class="hidden text-lg text-amber-500 font-bold animate-pulse">⏰</span>
-            </div>
-            <form id="leavingNoteForm" class="space-y-2">
-              <textarea id="leavingNoteInput" maxlength="100" rows="2" placeholder="帰る前の自分へメモを残そう (最大100文字)" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-amber-300 resize-none"></textarea>
-              <div class="flex items-center justify-between">
-                <button type="submit" class="rounded-xl bg-amber-500 text-white px-4 py-2 font-semibold shadow hover:bg-amber-600 active:scale-95 transition">保存</button>
-                <span id="leavingNoteStatus" class="text-xs text-emerald-600 ml-2"></span>
-              </div>
-            </form>
-            <div id="leavingNoteYesterday" class="mt-2 text-xs text-slate-500"></div>
-          </section>
         </div>
 
         <div class="lg:col-span-1 space-y-6">
@@ -300,6 +282,24 @@
             </p>
           </section>
         </div>
+      </section>
+
+      <section id="leavingNoteCard" class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up transition-all">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span id="leavingNoteIcon" class="text-2xl">📝</span>
+            <h2 id="leavingNoteTitle" class="text-xl font-bold">帰る前のひとこと</h2>
+          </div>
+          <span id="leavingNotePulse" class="hidden text-lg text-amber-500 font-bold animate-pulse">⏰</span>
+        </div>
+        <form id="leavingNoteForm" class="space-y-2">
+          <textarea id="leavingNoteInput" maxlength="100" rows="2" placeholder="帰る前の自分へメモを残そう (最大100文字)" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-amber-300 resize-none"></textarea>
+          <div class="flex items-center justify-between">
+            <button type="submit" class="rounded-xl bg-amber-500 text-white px-4 py-2 font-semibold shadow hover:bg-amber-600 active:scale-95 transition">保存</button>
+            <span id="leavingNoteStatus" class="text-xs text-emerald-600 ml-2"></span>
+          </div>
+        </form>
+        <div id="leavingNoteYesterday" class="mt-2 text-xs text-slate-500"></div>
       </section>
     </main>
   </body>
