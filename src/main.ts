@@ -1182,7 +1182,7 @@ function getLeavingNoteLog(): Record<string, string> {
     if (!parsed || typeof parsed !== "object") return {};
     return parsed;
   } catch (e) {
-    console.warn("帰る前のひとことの読み込み失敗", e);
+    console.warn("明日へのメッセージの読み込み失敗", e);
     return {};
   }
 }
@@ -1191,7 +1191,7 @@ function saveLeavingNoteLog(log: Record<string, string>) {
   try {
     localStorage.setItem(LEAVING_NOTE_STORAGE_KEY, JSON.stringify(log));
   } catch (e) {
-    console.warn("帰る前のひとことの保存失敗", e);
+    console.warn("明日へのメッセージの保存失敗", e);
   }
 }
 
@@ -1212,7 +1212,7 @@ function isLeavingTime(): boolean {
   return now.getHours() > LEAVING_REMINDER_HOUR || (now.getHours() === LEAVING_REMINDER_HOUR && now.getMinutes() >= LEAVING_REMINDER_MINUTE);
 }
 
-function renderLeavingNoteCard() {
+function renderLeavingNoteCard(clearStatus = true) {
   const card = document.getElementById("leavingNoteCard");
   const input = document.getElementById("leavingNoteInput") as HTMLTextAreaElement | null;
   const status = document.getElementById("leavingNoteStatus");
@@ -1224,7 +1224,9 @@ function renderLeavingNoteCard() {
 
   // 復元
   input.value = getTodayLeavingNote();
-  status.textContent = "";
+  if (clearStatus) {
+    status.textContent = "";
+  }
   const yNote = getYesterdayLeavingNote();
   yesterday.textContent = yNote ? `昨日: ${yNote}` : "";
 
@@ -1234,7 +1236,7 @@ function renderLeavingNoteCard() {
     title.classList.add("leaving-note-title-highlight");
     icon.classList.add("leaving-note-icon-highlight");
     pulse.classList.remove("hidden");
-    pulse.textContent = "そろそろ帰る前のひとことを確認しましょう";
+    pulse.textContent = "そろそろ明日へのメッセージを確認しましょう";
   } else {
     card.classList.remove("leaving-note-highlight");
     title.classList.remove("leaving-note-title-highlight");
@@ -1250,6 +1252,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const input = document.getElementById("leavingNoteInput") as HTMLTextAreaElement | null;
   const status = document.getElementById("leavingNoteStatus");
   if (form && input && status) {
+    input.addEventListener("input", () => {
+      status.textContent = "";
+    });
+
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const value = input.value.trim();
@@ -1265,7 +1271,7 @@ document.addEventListener("DOMContentLoaded", () => {
       log[getLocalDateKey()] = value;
       saveLeavingNoteLog(log);
       status.textContent = "保存しました";
-      renderLeavingNoteCard();
+      renderLeavingNoteCard(false);
     });
   }
   // 16:00以降の強調を毎分チェック
