@@ -68,6 +68,7 @@ let activeLocationMode: LocationMode = "preset";
 let customWeatherLocation: OfficeLocation | null = null;
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 const MOOD_LOG_STORAGE_KEY = "gdm:moodLog";
+const NAME_STORAGE_KEY = "gdm:profileName";
 const GSI_GEOCODING_API_ENDPOINT = "https://msearch.gsi.go.jp/address-search/AddressSearch";
 const GEOCODING_API_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
@@ -942,6 +943,24 @@ function saveLocationState(locationState: SavedLocationState): void {
   }
 }
 
+function loadProfileName(): string {
+  try {
+    const stored = localStorage.getItem(NAME_STORAGE_KEY);
+    return stored ? stored : "";
+  } catch (error) {
+    console.warn("名前の保存データを読み込めませんでした", error);
+    return "";
+  }
+}
+
+function saveProfileName(name: string): void {
+  try {
+    localStorage.setItem(NAME_STORAGE_KEY, name);
+  } catch (error) {
+    console.warn("名前の保存に失敗しました", error);
+  }
+}
+
 type OpenMeteoResponse = {
   current?: {
     temperature_2m?: number;
@@ -1137,6 +1156,19 @@ function setupEvents(): void {
     });
   });
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  const nameInput = document.getElementById("nameInput") as HTMLInputElement | null;
+  if (nameInput) {
+    nameInput.value = loadProfileName();
+    activeProfileName = nameInput.value.trim();
+    nameInput.addEventListener("input", (e) => {
+      const value = (e.target as HTMLInputElement).value.trim();
+      activeProfileName = value;
+      saveProfileName(value);
+    });
+  }
+});
 
 function init(): void {
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
