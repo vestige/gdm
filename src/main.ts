@@ -1,5 +1,15 @@
 import "./style.css";
-import { fortunes, luckyActions, luckyColors, miniChallengeCategories, quotes } from "./data";
+import {
+  fortunes,
+  luckyActions,
+  luckyBoxMissResults,
+  luckyBoxNormalResults,
+  luckyBoxRareResult,
+  luckyColors,
+  miniChallengeCategories,
+  quotes,
+  type LuckyBoxResult
+} from "./data";
 
 type OfficeLocation = {
   name: string;
@@ -26,6 +36,12 @@ type LocationMode = "preset" | "custom";
 type MoodLevel = 1 | 2 | 3 | 4 | 5;
 type MoodHistory = Record<string, MoodLevel>;
 type MoodLog = Record<string, MoodHistory>;
+type LuckyBoxEntry = {
+  selectedIndex: number;
+  winningIndex: number;
+  result: LuckyBoxResult;
+};
+type LuckyBoxLog = Record<string, LuckyBoxEntry>;
 type MoodStatusTone = "default" | "error" | "success";
 type LocationStatusTone = "default" | "error" | "success";
 type MoodGraphEntry = {
@@ -69,6 +85,7 @@ let customWeatherLocation: OfficeLocation | null = null;
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
 const MOOD_LOG_STORAGE_KEY = "gdm:moodLog";
 const NAME_STORAGE_KEY = "gdm:profileName";
+const LUCKY_BOX_LOG_STORAGE_KEY = "gdm:luckyBoxLog";
 const GSI_GEOCODING_API_ENDPOINT = "https://msearch.gsi.go.jp/address-search/AddressSearch";
 const GEOCODING_API_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
@@ -76,6 +93,8 @@ const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wiki
 const QUOTE_API_ENDPOINT = "/api/quote";
 let latestQuoteText = "";
 let currentMoodLog: MoodLog = {};
+let currentLuckyBoxEntry: LuckyBoxEntry | null = null;
+let currentLuckyBoxDateKey = "";
 let activeProfileName = "";
 const moodOptions = [
   { value: 1, emoji: "😴", label: "低め" },
@@ -168,6 +187,37 @@ function isMoodLevel(value: unknown): value is MoodLevel {
 
 function getMoodOption(mood: MoodLevel): (typeof moodOptions)[number] {
   return moodOptions.find((option) => option.value === mood) ?? moodOptions[2];
+}
+
+function isLuckyBoxResult(value: unknown): value is LuckyBoxResult {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<LuckyBoxResult>;
+  return (
+    typeof candidate.title === "string" &&
+    typeof candidate.message === "string" &&
+    typeof candidate.emoji === "string" &&
+    (candidate.rarity === "normal" || candidate.rarity === "rare")
+  );
+}
+
+function isLuckyBoxEntry(value: unknown): value is LuckyBoxEntry {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<LuckyBoxEntry>;
+  return (
+    Number.isInteger(candidate.selectedIndex) &&
+    Number(candidate.selectedIndex) >= 0 &&
+    Number(candidate.selectedIndex) <= 2 &&
+    Number.isInteger(candidate.winningIndex) &&
+    Number(candidate.winningIndex) >= 0 &&
+    Number(candidate.winningIndex) <= 2 &&
+    isLuckyBoxResult(candidate.result)
+  );
 }
 
 function setLocationStatus(message: string, tone: LocationStatusTone = "default"): void {
@@ -412,6 +462,61 @@ function getTodayMiniChallenge(): { category: string; text: string } {
   };
 }
 
+function loadLuckyBoxLog(): LuckyBoxLog {
+  try {
+    const stored = localStorage.getItem(LUCKY_BOX_LOG_STORAGE_KEY);
+    if (!stored) {
+      return {};
+    }
+
+    const parsed = JSON.parse(stored) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const nextLog: LuckyBoxLog = {};
+    for (const [dateKey, entry] of Object.entries(parsed)) {
+      if (isLuckyBoxEntry(entry)) {
+        nextLog[dateKey] = entry;
+      }
+    }
+
+    return nextLog;
+  } catch (error) {
+    console.warn("ラッキーボックスログの読み込みに失敗しました", error);
+    return {};
+  }
+}
+
+function persistLuckyBoxLog(luckyBoxLog: LuckyBoxLog): boolean {
+  try {
+    localStorage.setItem(LUCKY_BOX_LOG_STORAGE_KEY, JSON.stringify(luckyBoxLog));
+    return true;
+  } catch (error) {
+    console.warn("ラッキーボックスログの保存に失敗しました", error);
+    return false;
+  }
+}
+
+function getLuckyBoxWinningIndex(date = new Date()): number {
+  return getDateSeed(date, "lucky-box-winning-index") % 3;
+}
+
+function isLuckyBoxRareDay(date = new Date()): boolean {
+  return getDateSeed(date, "lucky-box-rare-roll") % 100 < 5;
+}
+
+function pickLuckyBoxResult(date: Date, selectedIndex: number, isWin: boolean): LuckyBoxResult {
+  if (isWin) {
+    if (isLuckyBoxRareDay(date)) {
+      return luckyBoxRareResult;
+    }
+    return pickBySeed(luckyBoxNormalResults, getDateSeed(date, "lucky-box-normal-result"), selectedIndex);
+  }
+
+  return pickBySeed(luckyBoxMissResults, getDateSeed(date, "lucky-box-miss-result"), selectedIndex);
+}
+
 function loadMoodLog(): MoodLog {
   try {
     const stored = localStorage.getItem(MOOD_LOG_STORAGE_KEY);
@@ -492,6 +597,157 @@ function renderMiniChallenge(): void {
   const miniChallenge = getTodayMiniChallenge();
   getElementByIdOrThrow<HTMLElement>("miniChallengeCategory").textContent = miniChallenge.category;
   getElementByIdOrThrow<HTMLElement>("miniChallengeText").textContent = miniChallenge.text;
+}
+
+function getLuckyBoxButtons(): HTMLButtonElement[] {
+  return Array.from(document.querySelectorAll<HTMLButtonElement>("[data-lucky-box-index]"));
+}
+
+function setLuckyBoxStatus(message: string, tone: MoodStatusTone = "default"): void {
+  const luckyBoxStatus = getElementByIdOrThrow<HTMLElement>("luckyBoxStatus");
+  luckyBoxStatus.textContent = message;
+  luckyBoxStatus.classList.remove("text-slate-500", "text-emerald-600", "text-rose-500");
+
+  if (tone === "success") {
+    luckyBoxStatus.classList.add("text-emerald-600");
+    return;
+  }
+
+  if (tone === "error") {
+    luckyBoxStatus.classList.add("text-rose-500");
+    return;
+  }
+
+  luckyBoxStatus.classList.add("text-slate-500");
+}
+
+function getTodayLuckyBoxEntry(): LuckyBoxEntry | null {
+  const todayKey = getLocalDateKey();
+  if (currentLuckyBoxDateKey === todayKey) {
+    return currentLuckyBoxEntry;
+  }
+
+  const luckyBoxLog = loadLuckyBoxLog();
+  currentLuckyBoxDateKey = todayKey;
+  currentLuckyBoxEntry = luckyBoxLog[todayKey] ?? null;
+  return currentLuckyBoxEntry;
+}
+
+function updateLuckyBoxButtons(entry: LuckyBoxEntry | null): void {
+  const luckyBoxButtons = getLuckyBoxButtons();
+
+  luckyBoxButtons.forEach((button, index) => {
+    const isSelected = entry?.selectedIndex === index;
+    const isOpened = Boolean(entry && isSelected);
+    const isHit = Boolean(entry && isSelected && entry.selectedIndex === entry.winningIndex);
+    button.disabled = Boolean(entry);
+    button.dataset.selected = String(isSelected);
+    button.dataset.opened = String(isOpened);
+    button.dataset.hit = String(isHit);
+    button.setAttribute("aria-pressed", String(isSelected));
+
+    const icon = button.querySelector<HTMLElement>("[data-lucky-box-icon]");
+    const hint = button.querySelector<HTMLElement>("[data-lucky-box-hint]");
+    if (!icon || !hint) {
+      return;
+    }
+
+    if (!entry) {
+      icon.textContent = "📦";
+      hint.textContent = `BOX ${index + 1}`;
+      return;
+    }
+
+    if (isSelected) {
+      icon.textContent = isHit ? "🎁" : "📭";
+      hint.textContent = isHit ? "OPEN!" : "TRY!";
+      return;
+    }
+
+    icon.textContent = "📦";
+    hint.textContent = `BOX ${index + 1}`;
+  });
+}
+
+function renderLuckyBoxCard(status?: { text: string; tone: MoodStatusTone }): void {
+  const card = getElementByIdOrThrow<HTMLElement>("luckyBoxCard");
+  const resultPanel = getElementByIdOrThrow<HTMLElement>("luckyBoxResultPanel");
+  const outcomeBadge = getElementByIdOrThrow<HTMLElement>("luckyBoxOutcomeBadge");
+  const resultEmoji = getElementByIdOrThrow<HTMLElement>("luckyBoxResultEmoji");
+  const resultTitle = getElementByIdOrThrow<HTMLElement>("luckyBoxResultTitle");
+  const resultMessage = getElementByIdOrThrow<HTMLElement>("luckyBoxResultMessage");
+  const rarityBadge = getElementByIdOrThrow<HTMLElement>("luckyBoxRarityBadge");
+  const todayEntry = getTodayLuckyBoxEntry();
+
+  updateLuckyBoxButtons(todayEntry);
+
+  if (!todayEntry) {
+    resultPanel.classList.add("hidden");
+    card.classList.remove("lucky-box-card-rare");
+    setLuckyBoxStatus(status?.text ?? "どれか1つ選んでください", status?.tone ?? "default");
+    return;
+  }
+
+  const isWin = todayEntry.selectedIndex === todayEntry.winningIndex;
+  resultPanel.classList.remove("hidden", "lucky-box-result-win", "lucky-box-result-miss", "lucky-box-result-rare");
+  resultPanel.classList.add(isWin ? "lucky-box-result-win" : "lucky-box-result-miss");
+
+  if (todayEntry.result.rarity === "rare") {
+    resultPanel.classList.add("lucky-box-result-rare");
+    card.classList.add("lucky-box-card-rare");
+    rarityBadge.textContent = "RARE";
+    rarityBadge.classList.remove("hidden");
+  } else {
+    card.classList.remove("lucky-box-card-rare");
+    rarityBadge.textContent = "";
+    rarityBadge.classList.add("hidden");
+  }
+
+  outcomeBadge.textContent = isWin ? "当たり！" : "今日はこの結果";
+  outcomeBadge.classList.remove("bg-emerald-100", "text-emerald-700", "bg-slate-200", "text-slate-700");
+  outcomeBadge.classList.add(isWin ? "bg-emerald-100" : "bg-slate-200", isWin ? "text-emerald-700" : "text-slate-700");
+
+  resultEmoji.textContent = todayEntry.result.emoji;
+  resultTitle.textContent = todayEntry.result.title;
+  resultMessage.textContent = todayEntry.result.message;
+  setLuckyBoxStatus(status?.text ?? "今日はもう選択済みです。結果は固定されています。", status?.tone ?? "success");
+}
+
+function handleLuckyBoxSelection(selectedIndex: number): void {
+  const today = new Date();
+  const todayKey = getLocalDateKey(today);
+  const existingEntry = getTodayLuckyBoxEntry();
+  if (existingEntry) {
+    renderLuckyBoxCard();
+    return;
+  }
+
+  const winningIndex = getLuckyBoxWinningIndex(today);
+  const isWin = selectedIndex === winningIndex;
+  const result = pickLuckyBoxResult(today, selectedIndex, isWin);
+  const todayEntry: LuckyBoxEntry = {
+    selectedIndex,
+    winningIndex,
+    result
+  };
+
+  currentLuckyBoxDateKey = todayKey;
+  currentLuckyBoxEntry = todayEntry;
+
+  const luckyBoxLog = loadLuckyBoxLog();
+  const isSaved = persistLuckyBoxLog({
+    ...luckyBoxLog,
+    [todayKey]: todayEntry
+  });
+
+  renderLuckyBoxCard(
+    isSaved
+      ? { text: "箱を開封しました。今日はこの結果で固定です。", tone: "success" }
+      : {
+          text: "箱を開封しました。保存に失敗したため、この環境では再読み込み後に結果が戻らない場合があります。",
+          tone: "error"
+        }
+  );
 }
 
 function getMoonPhaseInfo(date = new Date()): {
@@ -1080,6 +1336,7 @@ function showMorningCards(): void {
   activeProfileName = submittedName;
   drawFortune();
   renderMiniChallenge();
+  renderLuckyBoxCard();
   renderMoonPhase();
   renderMoodSection();
   revealResults();
@@ -1093,6 +1350,7 @@ function setupEvents(): void {
   const customLocationInput = getElementByIdOrThrow<HTMLInputElement>("customLocationInput");
   const customLocationButton = getElementByIdOrThrow<HTMLButtonElement>("customLocationButton");
   const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
+  const luckyBoxButtons = getLuckyBoxButtons();
 
   nameForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1153,6 +1411,16 @@ function setupEvents(): void {
         return;
       }
       handleMoodSelection(rawMoodValue);
+    });
+  });
+
+  luckyBoxButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const selectedIndex = Number(button.dataset.luckyBoxIndex);
+      if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex > 2) {
+        return;
+      }
+      handleLuckyBoxSelection(selectedIndex);
     });
   });
 }
@@ -1291,6 +1559,7 @@ function init(): void {
 
   setTodayLabel();
   renderMoonPhase();
+  renderLuckyBoxCard();
   currentMoodLog = loadMoodLog();
   setupEvents();
   void loadWeather();

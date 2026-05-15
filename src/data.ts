@@ -314,6 +314,98 @@ export const quotes: string[] = [
   "まず始めることが、いちばんの近道になる。"
 ];
 
+export type LuckyBoxResult = {
+  title: string;
+  message: string;
+  emoji: string;
+  rarity: "normal" | "rare";
+};
+
+export const luckyBoxNormalResults: LuckyBoxResult[] = [
+  {
+    emoji: "☕",
+    title: "コーヒー運UP",
+    message: "今日は温かい飲み物が作業のスイッチになりそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🧠",
+    title: "集中力UP",
+    message: "最初の30分に重い作業を置くと、流れに乗れそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🍀",
+    title: "小さな幸運",
+    message: "小さなタイミングの良さが重なりやすい日です。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🧹",
+    title: "整理整頓運",
+    message: "身の回りを少し整えるだけで、集中しやすくなりそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "💬",
+    title: "会話運UP",
+    message: "ひとこと共有が思った以上にスムーズさを生みそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🧘",
+    title: "休憩上手",
+    message: "短い休憩の切り替えが、午後の効率を底上げしてくれそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🧗",
+    title: "ムーブ冴え",
+    message: "手順を丁寧に組むほど、気持ちよく進められそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🌤",
+    title: "帰り道ラッキー",
+    message: "帰り道に小さな気分転換のチャンスがありそうです。",
+    rarity: "normal"
+  }
+];
+
+export const luckyBoxMissResults: LuckyBoxResult[] = [
+  {
+    emoji: "🙂",
+    title: "今日は堅実にいく日",
+    message: "焦らずいつもの手順を守るほど安定しそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🧩",
+    title: "焦らず整える日",
+    message: "段取りを1つ整えるだけで、流れが良くなりそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "🔎",
+    title: "小さな確認が吉",
+    message: "見直しを一回増やすと、安心して進められそうです。",
+    rarity: "normal"
+  },
+  {
+    emoji: "👣",
+    title: "無理せず一歩ずつ",
+    message: "今日はペース重視で、確実に積み上げるのが良さそうです。",
+    rarity: "normal"
+  }
+];
+
+export const luckyBoxRareResult: LuckyBoxResult = {
+  emoji: "🌈",
+  title: "SUPER LUCKY DAY",
+  message: "今日は偶然の追い風が吹きやすい日。思い切って一歩進めてみましょう。",
+  rarity: "rare"
+};
+
 export const trivia: string[] = [
   "朝に太陽の光を浴びると、体内時計が整いやすいと言われています。",
   "最初の15分の過ごし方で、その日の集中しやすさが変わることがあります。",
