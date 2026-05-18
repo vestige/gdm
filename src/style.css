@@ -259,3 +259,15 @@
 .leaving-note-icon-highlight {
   filter: drop-shadow(0 0 6px #fbbf24);
 }
+
+#leavingNoteCard:focus-within {
+  animation: none;
+}
+
+#leavingNoteCard:focus-within .leaving-note-title-highlight {
+  text-shadow: none;
+}
+
+#leavingNoteCard:focus-within .leaving-note-icon-highlight {
+  filter: none;
+}
