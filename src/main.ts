@@ -56,6 +56,26 @@ type BuddyEntry = {
   fetchedAt: string;
 };
 type BuddyLog = Record<string, BuddyEntry>;
+type ReadingCategory = "cozy" | "tech";
+type ReadingItem = {
+  title: string;
+  url: string;
+  source: string;
+  description: string;
+};
+type DailyReadingEntry = {
+  cozy: ReadingItem;
+  tech: ReadingItem;
+};
+type DailyReadingLog = Record<string, DailyReadingEntry>;
+type ReadingSource = {
+  source: string;
+  url: string;
+};
+type ReadingPickResult = {
+  item: ReadingItem;
+  usedFallback: boolean;
+};
 type SavedLocationState =
   | {
       mode: "preset";
@@ -103,6 +123,7 @@ const DOG_IMAGE_API_ENDPOINT = "https://dog.ceo/api/breeds/image/random";
 const CAT_IMAGE_API_ENDPOINT = "https://api.thecatapi.com/v1/images/search";
 const DAILY_BUDDY_LOG_STORAGE_KEY = "gdm:dailyBuddyLog";
 const BUDDY_PREFERENCE_STORAGE_KEY = "gdm:buddyPreference";
+const DAILY_READING_LOG_STORAGE_KEY = "gdm:dailyReadingLog";
 let latestQuoteText = "";
 let currentMoodLog: MoodLog = {};
 let currentLuckyBoxEntry: LuckyBoxEntry | null = null;
@@ -110,6 +131,7 @@ let currentLuckyBoxDateKey = "";
 let activeProfileName = "";
 let activeBuddyPreference: BuddyType = "dog";
 let currentBuddyRequestToken = 0;
+let currentReadingRequestToken = 0;
 const moodOptions = [
   { value: 1, emoji: "😴", label: "低め" },
   { value: 2, emoji: "😐", label: "ぼちぼち" },
@@ -150,6 +172,107 @@ type DogApiResponse = {
 type CatApiResponse = Array<{
   url?: string;
 }>;
+
+const cozyReadingSources: ReadingSource[] = [
+  { source: "デイリーポータルZ", url: "https://dailyportalz.jp/feed/headline" },
+  { source: "GIGAZINE", url: "https://gigazine.net/news/rss_2.0/" },
+  { source: "ロケットニュース24", url: "https://rocketnews24.com/feed/" }
+];
+
+const techReadingSources: ReadingSource[] = [
+  { source: "Ruby Weekly", url: "https://rubyweekly.com/rss/" },
+  { source: "Zenn", url: "https://zenn.dev/feed" },
+  { source: "Hacker News", url: "https://hnrss.org/frontpage" }
+];
+
+const excludedReadingKeywords = [
+  "事件",
+  "事故",
+  "災害",
+  "政治",
+  "炎上",
+  "訃報",
+  "戦争",
+  "犯罪",
+  "不祥事",
+  "逮捕",
+  "株価",
+  "暴落"
+];
+
+const cozyPriorityKeywords = [
+  "かわいい",
+  "楽しい",
+  "おもしろい",
+  "作ってみた",
+  "食べてみた",
+  "動物",
+  "犬",
+  "猫",
+  "散歩",
+  "工作",
+  "生活",
+  "発見"
+];
+
+const techPriorityKeywords = [
+  "ruby",
+  "rails",
+  "javascript",
+  "typescript",
+  "ai",
+  "robotics",
+  "robot",
+  "embedded",
+  "raspberry pi",
+  "pico",
+  "arduino",
+  "programming",
+  "developer",
+  "open source"
+];
+
+const cozyReadingFallbackItems: ReadingItem[] = [
+  {
+    title: "デイリーポータルZ 記事一覧をのぞいてみる",
+    url: "https://dailyportalz.jp/kiji",
+    source: "デイリーポータルZ",
+    description: "散歩・工作・食べ物など、朝に軽く読める記事を探しやすいページです。"
+  },
+  {
+    title: "犬や猫の話題をゆるくチェック",
+    url: "https://sippo.asahi.com/",
+    source: "sippo",
+    description: "動物の話題を中心に、ほっとする読み物を拾いやすいサイトです。"
+  },
+  {
+    title: "身近な発見を楽しむ読み物",
+    url: "https://www.1101.com/home.html",
+    source: "ほぼ日刊イトイ新聞",
+    description: "生活の気づきや小ネタを、短い時間で読みやすい構成でチェックできます。"
+  }
+];
+
+const techReadingFallbackItems: ReadingItem[] = [
+  {
+    title: "Ruby Weekly 最新号をチェック",
+    url: "https://rubyweekly.com/",
+    source: "Ruby Weekly",
+    description: "RubyとRails周辺の更新をまとめて追える定番ニュースレターです。"
+  },
+  {
+    title: "TypeScript / JavaScript の新着を探す",
+    url: "https://zenn.dev/topics/typescript",
+    source: "Zenn",
+    description: "実装寄りの記事が多く、朝に短く読んで今日のヒントを得やすいです。"
+  },
+  {
+    title: "組み込み・ロボティクス系の話題を追う",
+    url: "https://mag.switch-science.com/",
+    source: "スイッチサイエンス マガジン",
+    description: "Arduino、Raspberry Pi、ハードウェア制作の話題を拾えます。"
+  }
+];
 
 const buddyMessages = [
   "今日もぼちぼちいきましょう",
@@ -1287,6 +1410,310 @@ async function loadDailyBuddy(forceRefresh = false): Promise<void> {
   }
 }
 
+function isReadingItem(value: unknown): value is ReadingItem {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<ReadingItem>;
+  return (
+    typeof candidate.title === "string" &&
+    candidate.title.trim().length > 0 &&
+    typeof candidate.url === "string" &&
+    candidate.url.trim().length > 0 &&
+    typeof candidate.source === "string" &&
+    candidate.source.trim().length > 0 &&
+    typeof candidate.description === "string"
+  );
+}
+
+function isDailyReadingEntry(value: unknown): value is DailyReadingEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<DailyReadingEntry>;
+  return isReadingItem(candidate.cozy) && isReadingItem(candidate.tech);
+}
+
+function loadDailyReadingLog(): DailyReadingLog {
+  try {
+    const raw = localStorage.getItem(DAILY_READING_LOG_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const nextLog: DailyReadingLog = {};
+    for (const [dateKey, entry] of Object.entries(parsed)) {
+      if (isDailyReadingEntry(entry)) {
+        nextLog[dateKey] = entry;
+      }
+    }
+
+    return nextLog;
+  } catch (error) {
+    console.warn("読み物ログの読み込みに失敗しました", error);
+    return {};
+  }
+}
+
+function saveDailyReadingLog(log: DailyReadingLog): boolean {
+  try {
+    localStorage.setItem(DAILY_READING_LOG_STORAGE_KEY, JSON.stringify(log));
+    return true;
+  } catch (error) {
+    console.warn("読み物ログの保存に失敗しました", error);
+    return false;
+  }
+}
+
+function normalizeReadingText(value: string): string {
+  return value.normalize("NFKC").toLowerCase();
+}
+
+function stripHtml(text: string): string {
+  const temp = document.createElement("div");
+  temp.innerHTML = text;
+  return (temp.textContent ?? "").replace(/\s+/gu, " ").trim();
+}
+
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
+}
+
+function isHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function hasExcludedReadingKeyword(item: ReadingItem): boolean {
+  const target = normalizeReadingText(`${item.title} ${item.description} ${item.source}`);
+  return excludedReadingKeywords.some((keyword) => target.includes(normalizeReadingText(keyword)));
+}
+
+function countMatchedKeywords(text: string, keywords: string[]): number {
+  const normalizedText = normalizeReadingText(text);
+  return keywords.reduce(
+    (count, keyword) => count + (normalizedText.includes(normalizeReadingText(keyword)) ? 1 : 0),
+    0
+  );
+}
+
+function scoreReadingItem(item: ReadingItem, category: ReadingCategory, dateKey: string): number {
+  if (hasExcludedReadingKeyword(item)) {
+    return -1000;
+  }
+
+  const target = `${item.title} ${item.description} ${item.source}`;
+  const keywordScore = countMatchedKeywords(
+    target,
+    category === "cozy" ? cozyPriorityKeywords : techPriorityKeywords
+  );
+  const descriptionBonus = item.description.trim().length > 0 ? 1 : 0;
+  const stableNoise = hashString(`${dateKey}-${item.url}`) % 5;
+
+  return keywordScore * 10 + descriptionBonus + stableNoise;
+}
+
+function parseFeedItems(feedText: string, source: string): ReadingItem[] {
+  const parser = new DOMParser();
+  const documentNode = parser.parseFromString(feedText, "application/xml");
+  if (documentNode.querySelector("parsererror")) {
+    return [];
+  }
+
+  const itemNodes = Array.from(documentNode.querySelectorAll("item, entry"));
+  const items: ReadingItem[] = [];
+  for (const itemNode of itemNodes) {
+    const title = itemNode.querySelector("title")?.textContent?.trim() ?? "";
+    const descriptionRaw =
+      itemNode.querySelector("description")?.textContent ??
+      itemNode.querySelector("summary")?.textContent ??
+      itemNode.querySelector("content")?.textContent ??
+      "";
+
+    const linkNodes = Array.from(itemNode.querySelectorAll("link"));
+    let link = "";
+    for (const linkNode of linkNodes) {
+      const href = linkNode.getAttribute("href")?.trim();
+      const textContent = linkNode.textContent?.trim() ?? "";
+      const candidate = href || textContent;
+      if (candidate && isHttpUrl(candidate)) {
+        link = candidate;
+        break;
+      }
+    }
+
+    if (!title || !link) {
+      continue;
+    }
+
+    items.push({
+      title,
+      url: link,
+      source,
+      description: truncateText(stripHtml(descriptionRaw), 120)
+    });
+  }
+
+  return items;
+}
+
+async function fetchReadingItemsFromSources(sources: ReadingSource[]): Promise<ReadingItem[]> {
+  const collected: ReadingItem[] = [];
+
+  for (const source of sources) {
+    try {
+      const response = await fetch(source.url, { cache: "no-store" });
+      if (!response.ok) {
+        continue;
+      }
+
+      const feedText = await response.text();
+      const parsed = parseFeedItems(feedText, source.source);
+      if (parsed.length > 0) {
+        collected.push(...parsed);
+      }
+    } catch (error) {
+      console.warn(`読み物RSSの取得に失敗しました: ${source.source}`, error);
+    }
+  }
+
+  return collected;
+}
+
+function pickFallbackReadingItem(category: ReadingCategory, dateKey: string): ReadingItem {
+  const pool = category === "cozy" ? cozyReadingFallbackItems : techReadingFallbackItems;
+  return pickBySeed(pool, hashString(`${dateKey}-${category}-fallback`), 3);
+}
+
+function pickDailyReadingItem(candidates: ReadingItem[], category: ReadingCategory, dateKey: string): ReadingPickResult {
+  const filtered = candidates
+    .filter((item) => isHttpUrl(item.url) && item.title.trim().length > 0)
+    .filter((item) => !hasExcludedReadingKeyword(item));
+
+  if (filtered.length === 0) {
+    return {
+      item: pickFallbackReadingItem(category, dateKey),
+      usedFallback: true
+    };
+  }
+
+  const sorted = filtered
+    .map((item) => ({ item, score: scoreReadingItem(item, category, dateKey) }))
+    .sort((left, right) => right.score - left.score);
+
+  if (!sorted[0]?.item) {
+    return {
+      item: pickFallbackReadingItem(category, dateKey),
+      usedFallback: true
+    };
+  }
+
+  return {
+    item: sorted[0].item,
+    usedFallback: false
+  };
+}
+
+function renderReadingCard(category: ReadingCategory, item: ReadingItem, statusText: string): void {
+  const prefix = category === "cozy" ? "cozy" : "tech";
+  const title = getElementByIdOrThrow<HTMLElement>(`${prefix}ReadingTitle`);
+  const description = getElementByIdOrThrow<HTMLElement>(`${prefix}ReadingDescription`);
+  const source = getElementByIdOrThrow<HTMLElement>(`${prefix}ReadingSource`);
+  const link = getElementByIdOrThrow<HTMLAnchorElement>(`${prefix}ReadingLink`);
+  const status = getElementByIdOrThrow<HTMLElement>(`${prefix}ReadingStatus`);
+
+  title.textContent = item.title;
+  description.textContent = item.description || "朝に短く読める記事を選びました。";
+  source.textContent = item.source;
+  link.href = item.url;
+  status.textContent = statusText;
+}
+
+function setReadingLoadingState(): void {
+  getElementByIdOrThrow<HTMLElement>("cozyReadingTitle").textContent = "読み込み中...";
+  getElementByIdOrThrow<HTMLElement>("cozyReadingDescription").textContent = "";
+  getElementByIdOrThrow<HTMLElement>("cozyReadingSource").textContent = "---";
+  getElementByIdOrThrow<HTMLAnchorElement>("cozyReadingLink").href = "#";
+  getElementByIdOrThrow<HTMLElement>("cozyReadingStatus").textContent = "記事を選んでいます...";
+
+  getElementByIdOrThrow<HTMLElement>("techReadingTitle").textContent = "読み込み中...";
+  getElementByIdOrThrow<HTMLElement>("techReadingDescription").textContent = "";
+  getElementByIdOrThrow<HTMLElement>("techReadingSource").textContent = "---";
+  getElementByIdOrThrow<HTMLAnchorElement>("techReadingLink").href = "#";
+  getElementByIdOrThrow<HTMLElement>("techReadingStatus").textContent = "記事を選んでいます...";
+}
+
+async function loadDailyReadings(forceRefresh = false): Promise<void> {
+  const todayKey = getLocalDateKey();
+  const readingLog = loadDailyReadingLog();
+  const todayReading = readingLog[todayKey];
+
+  if (!forceRefresh && isDailyReadingEntry(todayReading)) {
+    renderReadingCard("cozy", todayReading.cozy, "今日はこの読み物にしてみました");
+    renderReadingCard("tech", todayReading.tech, "今日はこの読み物にしてみました");
+    return;
+  }
+
+  currentReadingRequestToken += 1;
+  const requestToken = currentReadingRequestToken;
+  setReadingLoadingState();
+
+  try {
+    const [cozyCandidates, techCandidates] = await Promise.all([
+      fetchReadingItemsFromSources(cozyReadingSources),
+      fetchReadingItemsFromSources(techReadingSources)
+    ]);
+
+    if (requestToken !== currentReadingRequestToken) {
+      return;
+    }
+
+    const cozyPick = pickDailyReadingItem(cozyCandidates, "cozy", todayKey);
+    const techPick = pickDailyReadingItem(techCandidates, "tech", todayKey);
+
+    const entry: DailyReadingEntry = { cozy: cozyPick.item, tech: techPick.item };
+    const isSaved = saveDailyReadingLog({
+      ...readingLog,
+      [todayKey]: entry
+    });
+
+    const usedFallback = cozyPick.usedFallback || techPick.usedFallback;
+    const statusText = usedFallback
+      ? "外部取得に失敗したため、フォールバック記事を表示しています"
+      : isSaved
+        ? "今日はこの読み物にしてみました"
+        : "保存できなかったため、再読み込みで変わる場合があります";
+
+    renderReadingCard("cozy", cozyPick.item, statusText);
+    renderReadingCard("tech", techPick.item, statusText);
+  } catch (error) {
+    if (requestToken !== currentReadingRequestToken) {
+      return;
+    }
+
+    console.warn("読み物の取得に失敗したためフォールバックを表示します", error);
+    const cozy = pickFallbackReadingItem("cozy", todayKey);
+    const tech = pickFallbackReadingItem("tech", todayKey);
+
+    renderReadingCard("cozy", cozy, "フォールバック記事を表示しています");
+    renderReadingCard("tech", tech, "フォールバック記事を表示しています");
+  }
+}
+
 async function loadQuote(name = ""): Promise<void> {
   const quoteText = getElementByIdOrThrow<HTMLElement>("quoteText");
   quoteText.textContent = "名言を取得中です...";
@@ -1878,6 +2305,7 @@ function init(): void {
   void loadQuote();
   void loadOnThisDay();
   void loadDailyBuddy();
+  void loadDailyReadings();
 }
 
 init();
