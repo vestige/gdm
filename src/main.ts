@@ -44,10 +44,18 @@ type LuckyBoxEntry = {
 type LuckyBoxLog = Record<string, LuckyBoxEntry>;
 type MoodStatusTone = "default" | "error" | "success";
 type LocationStatusTone = "default" | "error" | "success";
+type BuddyType = "dog" | "cat";
 type MoodGraphEntry = {
   label: string;
   mood: MoodLevel | 0;
 };
+type BuddyEntry = {
+  type: BuddyType;
+  imageUrl: string;
+  message: string;
+  fetchedAt: string;
+};
+type BuddyLog = Record<string, BuddyEntry>;
 type SavedLocationState =
   | {
       mode: "preset";
@@ -91,11 +99,17 @@ const GEOCODING_API_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
 const WIKIMEDIA_ONTHISDAY_API_BASE_URL = "https://api.wikimedia.org/feed/v1/wikipedia/en/onthisday/all";
 const QUOTE_API_ENDPOINT = "/api/quote";
+const DOG_IMAGE_API_ENDPOINT = "https://dog.ceo/api/breeds/image/random";
+const CAT_IMAGE_API_ENDPOINT = "https://api.thecatapi.com/v1/images/search";
+const DAILY_BUDDY_LOG_STORAGE_KEY = "gdm:dailyBuddyLog";
+const BUDDY_PREFERENCE_STORAGE_KEY = "gdm:buddyPreference";
 let latestQuoteText = "";
 let currentMoodLog: MoodLog = {};
 let currentLuckyBoxEntry: LuckyBoxEntry | null = null;
 let currentLuckyBoxDateKey = "";
 let activeProfileName = "";
+let activeBuddyPreference: BuddyType = "dog";
+let currentBuddyRequestToken = 0;
 const moodOptions = [
   { value: 1, emoji: "😴", label: "低め" },
   { value: 2, emoji: "😐", label: "ぼちぼち" },
@@ -127,6 +141,24 @@ type QuoteResponse = {
   quote?: string;
   author?: string;
 };
+
+type DogApiResponse = {
+  message?: string;
+  status?: string;
+};
+
+type CatApiResponse = Array<{
+  url?: string;
+}>;
+
+const buddyMessages = [
+  "今日もぼちぼちいきましょう",
+  "肩の力を抜いていきましょう",
+  "小さく始めれば大丈夫",
+  "帰るころには少し軽くなっていますように",
+  "ゆっくりでも前に進めばOKです",
+  "ひとつ終えたら、ちゃんとひと息つきましょう"
+];
 
 function getElementByIdOrThrow<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -997,6 +1029,264 @@ function drawFortune(): void {
   replayCardAnimation(getElementByIdOrThrow<HTMLElement>("fortuneCard"));
 }
 
+function isBuddyType(value: unknown): value is BuddyType {
+  return value === "dog" || value === "cat";
+}
+
+function isBuddyEntry(value: unknown): value is BuddyEntry {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<BuddyEntry>;
+  return (
+    isBuddyType(candidate.type) &&
+    typeof candidate.imageUrl === "string" &&
+    candidate.imageUrl.trim().length > 0 &&
+    typeof candidate.message === "string" &&
+    candidate.message.trim().length > 0 &&
+    typeof candidate.fetchedAt === "string" &&
+    candidate.fetchedAt.trim().length > 0
+  );
+}
+
+function loadBuddyPreference(): BuddyType {
+  try {
+    const stored = localStorage.getItem(BUDDY_PREFERENCE_STORAGE_KEY);
+    return isBuddyType(stored) ? stored : "dog";
+  } catch (error) {
+    console.warn("相棒の設定読み込みに失敗しました", error);
+    return "dog";
+  }
+}
+
+function saveBuddyPreference(type: BuddyType): void {
+  try {
+    localStorage.setItem(BUDDY_PREFERENCE_STORAGE_KEY, type);
+  } catch (error) {
+    console.warn("相棒の設定保存に失敗しました", error);
+  }
+}
+
+function loadDailyBuddyLog(): BuddyLog {
+  try {
+    const raw = localStorage.getItem(DAILY_BUDDY_LOG_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+
+    const nextLog: BuddyLog = {};
+    for (const [dateKey, entry] of Object.entries(parsed)) {
+      if (isBuddyEntry(entry)) {
+        nextLog[dateKey] = entry;
+      }
+    }
+
+    return nextLog;
+  } catch (error) {
+    console.warn("相棒ログの読み込みに失敗しました", error);
+    return {};
+  }
+}
+
+function saveDailyBuddyLog(log: BuddyLog): boolean {
+  try {
+    localStorage.setItem(DAILY_BUDDY_LOG_STORAGE_KEY, JSON.stringify(log));
+    return true;
+  } catch (error) {
+    console.warn("相棒ログの保存に失敗しました", error);
+    return false;
+  }
+}
+
+function setBuddyTypeButtons(type: BuddyType): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-buddy-type]").forEach((button) => {
+    const isSelected = button.dataset.buddyType === type;
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.classList.toggle("buddy-type-button-active", isSelected);
+  });
+
+  const fallbackEmoji = document.getElementById("buddyFallbackEmoji");
+  if (fallbackEmoji) {
+    fallbackEmoji.textContent = type === "cat" ? "🐱" : "🐶";
+  }
+}
+
+function setBuddyLoadingState(message = "本日の相棒を準備中です..."): void {
+  const loading = getElementByIdOrThrow<HTMLElement>("buddyLoading");
+  const image = getElementByIdOrThrow<HTMLImageElement>("buddyImage");
+  const fallback = getElementByIdOrThrow<HTMLElement>("buddyFallback");
+  const buddyMessage = getElementByIdOrThrow<HTMLElement>("buddyMessage");
+  const buddyStatus = getElementByIdOrThrow<HTMLElement>("buddyStatus");
+
+  loading.classList.remove("hidden");
+  image.classList.add("hidden");
+  image.classList.remove("buddy-image-visible");
+  fallback.classList.add("hidden");
+  fallback.classList.remove("flex");
+  buddyMessage.textContent = "読み込み中...";
+  buddyStatus.textContent = message;
+}
+
+function showBuddyFallback(type: BuddyType, message: string): void {
+  const loading = getElementByIdOrThrow<HTMLElement>("buddyLoading");
+  const image = getElementByIdOrThrow<HTMLImageElement>("buddyImage");
+  const fallback = getElementByIdOrThrow<HTMLElement>("buddyFallback");
+  const fallbackEmoji = getElementByIdOrThrow<HTMLElement>("buddyFallbackEmoji");
+  const buddyMessage = getElementByIdOrThrow<HTMLElement>("buddyMessage");
+  const buddyStatus = getElementByIdOrThrow<HTMLElement>("buddyStatus");
+
+  loading.classList.add("hidden");
+  image.classList.add("hidden");
+  image.classList.remove("buddy-image-visible");
+  fallback.classList.remove("hidden");
+  fallback.classList.add("flex");
+  fallbackEmoji.textContent = type === "cat" ? "🐱" : "🐶";
+  buddyMessage.textContent = message;
+  buddyStatus.textContent = "画像を取得できませんでした";
+}
+
+function showBuddyImage(entry: BuddyEntry, token: number, statusMessage: string): void {
+  const loading = getElementByIdOrThrow<HTMLElement>("buddyLoading");
+  const image = getElementByIdOrThrow<HTMLImageElement>("buddyImage");
+  const fallback = getElementByIdOrThrow<HTMLElement>("buddyFallback");
+  const buddyMessage = getElementByIdOrThrow<HTMLElement>("buddyMessage");
+  const buddyStatus = getElementByIdOrThrow<HTMLElement>("buddyStatus");
+
+  setBuddyTypeButtons(entry.type);
+  fallback.classList.add("hidden");
+  fallback.classList.remove("flex");
+  buddyMessage.textContent = entry.message;
+  buddyStatus.textContent = statusMessage;
+  loading.classList.remove("hidden");
+  image.classList.add("hidden");
+  image.classList.remove("buddy-image-visible");
+  const fallbackTimeoutId = window.setTimeout(() => {
+    if (token !== currentBuddyRequestToken) {
+      return;
+    }
+    showBuddyFallback(entry.type, "今日は相棒がお休み中です。またあとで会いにきてください。");
+  }, 8000);
+
+  image.onload = () => {
+    if (token !== currentBuddyRequestToken) {
+      return;
+    }
+    window.clearTimeout(fallbackTimeoutId);
+    loading.classList.add("hidden");
+    image.classList.remove("hidden");
+    image.classList.add("buddy-image-visible");
+  };
+
+  image.onerror = () => {
+    if (token !== currentBuddyRequestToken) {
+      return;
+    }
+    window.clearTimeout(fallbackTimeoutId);
+    showBuddyFallback(entry.type, "今日は相棒がお休み中です。またあとで会いにきてください。");
+  };
+
+  image.src = entry.imageUrl;
+  if (image.complete && image.naturalWidth > 0) {
+    window.clearTimeout(fallbackTimeoutId);
+    loading.classList.add("hidden");
+    image.classList.remove("hidden");
+    image.classList.add("buddy-image-visible");
+  }
+}
+
+function pickDailyBuddyMessage(dateKey: string, type: BuddyType): string {
+  const seed = hashString(`${dateKey}-${type}`);
+  return pickBySeed(buddyMessages, seed, 5);
+}
+
+async function fetchDogImageUrl(): Promise<string> {
+  const response = await fetch(DOG_IMAGE_API_ENDPOINT);
+  if (!response.ok) {
+    throw new Error(`Dog APIエラー: ${response.status}`);
+  }
+
+  const data = (await response.json()) as DogApiResponse;
+  const imageUrl = typeof data.message === "string" ? data.message.trim() : "";
+  if (data.status !== "success" || !imageUrl) {
+    throw new Error("Dog APIレスポンスが不正です");
+  }
+
+  return imageUrl;
+}
+
+async function fetchCatImageUrl(): Promise<string> {
+  const response = await fetch(CAT_IMAGE_API_ENDPOINT);
+  if (!response.ok) {
+    throw new Error(`Cat APIエラー: ${response.status}`);
+  }
+
+  const data = (await response.json()) as CatApiResponse;
+  const first = Array.isArray(data) ? data[0] : null;
+  const imageUrl = typeof first?.url === "string" ? first.url.trim() : "";
+  if (!imageUrl) {
+    throw new Error("Cat APIレスポンスが不正です");
+  }
+
+  return imageUrl;
+}
+
+async function fetchBuddyImageUrl(type: BuddyType): Promise<string> {
+  return type === "cat" ? fetchCatImageUrl() : fetchDogImageUrl();
+}
+
+async function loadDailyBuddy(forceRefresh = false): Promise<void> {
+  const todayKey = getLocalDateKey();
+  const buddyLog = loadDailyBuddyLog();
+  const todayBuddy = buddyLog[todayKey];
+
+  if (!forceRefresh && isBuddyEntry(todayBuddy) && todayBuddy.type === activeBuddyPreference) {
+    currentBuddyRequestToken += 1;
+    showBuddyImage(todayBuddy, currentBuddyRequestToken, "今日はこの子が相棒です");
+    return;
+  }
+
+  currentBuddyRequestToken += 1;
+  const requestToken = currentBuddyRequestToken;
+  setBuddyLoadingState("本日の相棒を準備中です...");
+
+  try {
+    const imageUrl = await fetchBuddyImageUrl(activeBuddyPreference);
+    if (requestToken !== currentBuddyRequestToken) {
+      return;
+    }
+
+    const entry: BuddyEntry = {
+      type: activeBuddyPreference,
+      imageUrl,
+      message: pickDailyBuddyMessage(todayKey, activeBuddyPreference),
+      fetchedAt: new Date().toISOString()
+    };
+
+    const isSaved = saveDailyBuddyLog({
+      ...buddyLog,
+      [todayKey]: entry
+    });
+
+    showBuddyImage(
+      entry,
+      requestToken,
+      isSaved ? "今日はこの子が相棒です" : "この環境では保存できないため、再読み込みで変わる場合があります"
+    );
+  } catch (error) {
+    if (requestToken !== currentBuddyRequestToken) {
+      return;
+    }
+    console.error(error);
+    showBuddyFallback(activeBuddyPreference, "今日は相棒がお休み中です。またあとで会いにきてください。");
+  }
+}
+
 async function loadQuote(name = ""): Promise<void> {
   const quoteText = getElementByIdOrThrow<HTMLElement>("quoteText");
   quoteText.textContent = "名言を取得中です...";
@@ -1005,6 +1295,11 @@ async function loadQuote(name = ""): Promise<void> {
     const response = await fetch(QUOTE_API_ENDPOINT);
     if (!response.ok) {
       throw new Error(`quote APIエラー: ${response.status}`);
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("application/json")) {
+      throw new Error(`quote APIがJSON以外を返しました: ${contentType || "unknown"}`);
     }
 
     const data = (await response.json()) as QuoteResponse;
@@ -1017,7 +1312,7 @@ async function loadQuote(name = ""): Promise<void> {
     latestQuoteText = author ? `「${quote}」 - ${author}` : `「${quote}」`;
     quoteText.textContent = latestQuoteText;
   } catch (error) {
-    console.error(error);
+    console.warn("名言APIの取得に失敗したため、ローカル名言を利用します", error);
     const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
     const fallbackQuote = pickBySeed(quotes, getTodaySeed(name || nameInput.value), 7);
     latestQuoteText = fallbackQuote;
@@ -1351,6 +1646,7 @@ function setupEvents(): void {
   const customLocationButton = getElementByIdOrThrow<HTMLButtonElement>("customLocationButton");
   const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
   const luckyBoxButtons = getLuckyBoxButtons();
+  const buddyTypeButtons = document.querySelectorAll<HTMLButtonElement>("[data-buddy-type]");
 
   nameForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1421,6 +1717,20 @@ function setupEvents(): void {
         return;
       }
       handleLuckyBoxSelection(selectedIndex);
+    });
+  });
+
+  buddyTypeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const selectedType = button.dataset.buddyType;
+      if (!isBuddyType(selectedType) || selectedType === activeBuddyPreference) {
+        return;
+      }
+
+      activeBuddyPreference = selectedType;
+      setBuddyTypeButtons(selectedType);
+      saveBuddyPreference(selectedType);
+      void loadDailyBuddy(true);
     });
   });
 }
@@ -1561,10 +1871,13 @@ function init(): void {
   renderMoonPhase();
   renderLuckyBoxCard();
   currentMoodLog = loadMoodLog();
+  activeBuddyPreference = loadBuddyPreference();
+  setBuddyTypeButtons(activeBuddyPreference);
   setupEvents();
   void loadWeather();
   void loadQuote();
   void loadOnThisDay();
+  void loadDailyBuddy();
 }
 
 init();
