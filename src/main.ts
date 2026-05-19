@@ -32,7 +32,7 @@ const locations = {
 
 type LocationKey = keyof typeof locations;
 type WeatherType = "rainy" | "cloudy" | "sunny";
-type LocationMode = "preset" | "custom";
+type LocationMode = "preset" | "custom" | "current";
 type MoodLevel = 1 | 2 | 3 | 4 | 5;
 type MoodHistory = Record<string, MoodLevel>;
 type MoodLog = Record<string, MoodHistory>;
@@ -85,6 +85,17 @@ type SavedLocationState =
       mode: "custom";
       location: OfficeLocation;
     };
+type WeatherLocationState =
+  | {
+      mode: "default";
+    }
+  | {
+      mode: "current";
+      lat: number;
+      lon: number;
+      label: string;
+      updatedAt: string;
+    };
 type GeocodingResult = {
   name?: string;
   latitude?: number;
@@ -111,6 +122,7 @@ let activeWeatherLocation: OfficeLocation = locations[selectedLocationKey];
 let activeLocationMode: LocationMode = "preset";
 let customWeatherLocation: OfficeLocation | null = null;
 const LOCATION_STORAGE_KEY = "gdm.selectedLocation";
+const WEATHER_LOCATION_STORAGE_KEY = "gdm:weatherLocation";
 const MOOD_LOG_STORAGE_KEY = "gdm:moodLog";
 const NAME_STORAGE_KEY = "gdm:profileName";
 const LUCKY_BOX_LOG_STORAGE_KEY = "gdm:luckyBoxLog";
@@ -124,6 +136,7 @@ const CAT_IMAGE_API_ENDPOINT = "https://api.thecatapi.com/v1/images/search";
 const DAILY_BUDDY_LOG_STORAGE_KEY = "gdm:dailyBuddyLog";
 const BUDDY_PREFERENCE_STORAGE_KEY = "gdm:buddyPreference";
 const DAILY_READING_LOG_STORAGE_KEY = "gdm:dailyReadingLog";
+const CURRENT_WEATHER_LABEL = "現在地周辺";
 let latestQuoteText = "";
 let currentMoodLog: MoodLog = {};
 let currentLuckyBoxEntry: LuckyBoxEntry | null = null;
@@ -132,6 +145,8 @@ let activeProfileName = "";
 let activeBuddyPreference: BuddyType = "dog";
 let currentBuddyRequestToken = 0;
 let currentReadingRequestToken = 0;
+let weatherLocationState: WeatherLocationState = { mode: "default" };
+let isCurrentLocationBusy = false;
 const moodOptions = [
   { value: 1, emoji: "😴", label: "低め" },
   { value: 2, emoji: "😐", label: "ぼちぼち" },
@@ -308,6 +323,29 @@ function isOfficeLocation(value: unknown): value is OfficeLocation {
   );
 }
 
+function isWeatherLocationState(value: unknown): value is WeatherLocationState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Partial<WeatherLocationState>;
+  if (candidate.mode === "default") {
+    return true;
+  }
+
+  return (
+    candidate.mode === "current" &&
+    typeof candidate.lat === "number" &&
+    Number.isFinite(candidate.lat) &&
+    typeof candidate.lon === "number" &&
+    Number.isFinite(candidate.lon) &&
+    typeof candidate.label === "string" &&
+    candidate.label.trim().length > 0 &&
+    typeof candidate.updatedAt === "string" &&
+    candidate.updatedAt.trim().length > 0
+  );
+}
+
 function hashString(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i += 1) {
@@ -394,11 +432,65 @@ function setLocationStatus(message: string, tone: LocationStatusTone = "default"
 }
 
 function formatActiveLocationStatus(): string {
+  if (activeLocationMode === "current") {
+    return `現在: ${activeWeatherLocation.name}（現在地）`;
+  }
+
   if (activeLocationMode === "custom") {
     return `現在: ${activeWeatherLocation.name}（入力場所）`;
   }
 
   return `現在: ${activeWeatherLocation.name}（プリセット）`;
+}
+
+function setWeatherLocationStatus(message: string, tone: "default" | "error" | "success" = "default"): void {
+  const status = getElementByIdOrThrow<HTMLElement>("weatherLocationStatus");
+  status.textContent = message;
+  status.classList.remove("text-slate-500", "text-rose-500", "text-emerald-600", "animate-pulse");
+  if (isCurrentLocationBusy) {
+    status.classList.add("animate-pulse");
+  }
+
+  if (tone === "error") {
+    status.classList.add("text-rose-500");
+    return;
+  }
+
+  if (tone === "success") {
+    status.classList.add("text-emerald-600");
+    return;
+  }
+
+  status.classList.add("text-slate-500");
+}
+
+function renderWeatherLocationControls(): void {
+  const weatherLocationHint = getElementByIdOrThrow<HTMLElement>("weatherLocationHint");
+  const setCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("setCurrentLocationButton");
+  const refreshCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("refreshCurrentLocationButton");
+  const resetWeatherLocationButton = getElementByIdOrThrow<HTMLButtonElement>("resetWeatherLocationButton");
+
+  const isCurrentMode = weatherLocationState.mode === "current";
+  weatherLocationHint.textContent = isCurrentMode
+    ? "現在地の天気を表示中"
+    : "現在地を使うと、あなたの場所の天気を表示できます";
+  setCurrentLocationButton.classList.toggle("hidden", isCurrentMode);
+  refreshCurrentLocationButton.classList.toggle("hidden", !isCurrentMode);
+  resetWeatherLocationButton.classList.toggle("hidden", !isCurrentMode);
+}
+
+function setCurrentLocationButtonsBusy(isBusy: boolean): void {
+  isCurrentLocationBusy = isBusy;
+  const setCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("setCurrentLocationButton");
+  const refreshCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("refreshCurrentLocationButton");
+  const resetWeatherLocationButton = getElementByIdOrThrow<HTMLButtonElement>("resetWeatherLocationButton");
+
+  setCurrentLocationButton.disabled = isBusy;
+  refreshCurrentLocationButton.disabled = isBusy;
+  resetWeatherLocationButton.disabled = isBusy;
+
+  setCurrentLocationButton.textContent = isBusy ? "現在地を取得中..." : "現在地を設定";
+  refreshCurrentLocationButton.textContent = isBusy ? "位置情報を更新中..." : "位置情報を更新";
 }
 
 function setLocationButtonBusy(isBusy: boolean): void {
@@ -422,6 +514,30 @@ function setActiveCustomLocation(location: OfficeLocation): void {
   getElementByIdOrThrow<HTMLSelectElement>("locationSelect").value = "custom";
   getElementByIdOrThrow<HTMLInputElement>("customLocationInput").value = location.name;
   setLocationStatus(formatActiveLocationStatus(), "success");
+}
+
+function setActiveCurrentWeatherLocation(lat: number, lon: number, label = CURRENT_WEATHER_LABEL): void {
+  activeLocationMode = "current";
+  activeWeatherLocation = {
+    name: label,
+    latitude: lat,
+    longitude: lon
+  };
+  setLocationStatus(formatActiveLocationStatus(), "success");
+}
+
+function shouldFallbackToCustomLocation(): boolean {
+  const selectedValue = getElementByIdOrThrow<HTMLSelectElement>("locationSelect").value;
+  return selectedValue === "custom" && customWeatherLocation !== null;
+}
+
+function restoreDefaultWeatherLocationSelection(): void {
+  if (shouldFallbackToCustomLocation() && customWeatherLocation) {
+    setActiveCustomLocation(customWeatherLocation);
+    return;
+  }
+
+  setActivePresetLocation(selectedLocationKey);
 }
 
 function buildCustomLocationLabel(result: GeocodingResult, query: string): string {
@@ -1925,6 +2041,33 @@ function saveLocationState(locationState: SavedLocationState): void {
   }
 }
 
+function loadWeatherLocationState(): WeatherLocationState {
+  try {
+    const stored = localStorage.getItem(WEATHER_LOCATION_STORAGE_KEY);
+    if (!stored) {
+      return { mode: "default" };
+    }
+
+    const parsed = JSON.parse(stored) as unknown;
+    if (!isWeatherLocationState(parsed)) {
+      return { mode: "default" };
+    }
+
+    return parsed;
+  } catch (error) {
+    console.warn("現在地設定の読み込みに失敗しました", error);
+    return { mode: "default" };
+  }
+}
+
+function saveWeatherLocationState(state: WeatherLocationState): void {
+  try {
+    localStorage.setItem(WEATHER_LOCATION_STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn("現在地設定の保存に失敗しました", error);
+  }
+}
+
 function loadProfileName(): string {
   try {
     const stored = localStorage.getItem(NAME_STORAGE_KEY);
@@ -1954,6 +2097,96 @@ type OpenMeteoResponse = {
     precipitation_probability?: number[];
   };
 };
+
+function clearCurrentWeatherLocationState(): void {
+  weatherLocationState = { mode: "default" };
+  saveWeatherLocationState(weatherLocationState);
+  renderWeatherLocationControls();
+}
+
+function mapGeolocationError(error: GeolocationPositionError): string {
+  if (error.code === error.PERMISSION_DENIED) {
+    return "位置情報が許可されなかったため、固定地点の天気を表示しています";
+  }
+
+  if (error.code === error.TIMEOUT) {
+    return "現在地を取得できませんでした。固定地点の天気を表示しています";
+  }
+
+  return "現在地の取得に失敗しました";
+}
+
+function isGeolocationPositionError(value: unknown): value is GeolocationPositionError {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<GeolocationPositionError>;
+  return typeof candidate.code === "number" && typeof candidate.message === "string";
+}
+
+function getCurrentPosition(options: PositionOptions): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+async function setCurrentWeatherLocation(): Promise<void> {
+  if (isCurrentLocationBusy) {
+    return;
+  }
+
+  if (!("geolocation" in navigator)) {
+    setWeatherLocationStatus("このブラウザでは現在地を取得できません", "error");
+    return;
+  }
+
+  setCurrentLocationButtonsBusy(true);
+  setWeatherLocationStatus("現在地を取得しています...");
+
+  try {
+    const position = await getCurrentPosition({
+      enableHighAccuracy: false,
+      timeout: 10_000,
+      maximumAge: 10 * 60 * 1000
+    });
+
+    const nextState: WeatherLocationState = {
+      mode: "current",
+      lat: position.coords.latitude,
+      lon: position.coords.longitude,
+      label: "現在地",
+      updatedAt: new Date().toISOString()
+    };
+
+    weatherLocationState = nextState;
+    saveWeatherLocationState(nextState);
+    setActiveCurrentWeatherLocation(nextState.lat, nextState.lon, CURRENT_WEATHER_LABEL);
+    renderWeatherLocationControls();
+    setWeatherLocationStatus("現在地の天気を表示中", "success");
+    void loadWeather();
+  } catch (error) {
+    const message = isGeolocationPositionError(error) ? mapGeolocationError(error) : "現在地の取得に失敗しました";
+
+    clearCurrentWeatherLocationState();
+    restoreDefaultWeatherLocationSelection();
+    setWeatherLocationStatus(message, "error");
+    void loadWeather();
+  } finally {
+    setCurrentLocationButtonsBusy(false);
+  }
+}
+
+function resetToDefaultWeatherLocation(): void {
+  if (isCurrentLocationBusy) {
+    return;
+  }
+
+  clearCurrentWeatherLocationState();
+  restoreDefaultWeatherLocationSelection();
+  setWeatherLocationStatus("固定地点の天気を表示しています");
+  void loadWeather();
+}
 
 async function loadWeather(): Promise<void> {
   const weatherStatus = getElementByIdOrThrow<HTMLElement>("weatherStatus");
@@ -2034,6 +2267,8 @@ async function useCustomLocation(): Promise<void> {
 
   try {
     const customLocation = await searchCustomLocation(query);
+    clearCurrentWeatherLocationState();
+    setWeatherLocationStatus("固定地点の天気を表示しています");
     setActiveCustomLocation(customLocation);
     saveLocationState({
       mode: "custom",
@@ -2075,6 +2310,9 @@ function setupEvents(): void {
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
   const customLocationInput = getElementByIdOrThrow<HTMLInputElement>("customLocationInput");
   const customLocationButton = getElementByIdOrThrow<HTMLButtonElement>("customLocationButton");
+  const setCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("setCurrentLocationButton");
+  const refreshCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("refreshCurrentLocationButton");
+  const resetWeatherLocationButton = getElementByIdOrThrow<HTMLButtonElement>("resetWeatherLocationButton");
   const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
   const luckyBoxButtons = getLuckyBoxButtons();
   const buddyTypeButtons = document.querySelectorAll<HTMLButtonElement>("[data-buddy-type]");
@@ -2094,6 +2332,8 @@ function setupEvents(): void {
       }
 
       setActiveCustomLocation(customWeatherLocation);
+      clearCurrentWeatherLocationState();
+      setWeatherLocationStatus("固定地点の天気を表示しています");
       saveLocationState({
         mode: "custom",
         location: customWeatherLocation
@@ -2106,6 +2346,8 @@ function setupEvents(): void {
       return;
     }
     setActivePresetLocation(nextLocation);
+    clearCurrentWeatherLocationState();
+    setWeatherLocationStatus("固定地点の天気を表示しています");
     saveLocationState({
       mode: "preset",
       presetKey: nextLocation
@@ -2115,6 +2357,18 @@ function setupEvents(): void {
 
   customLocationButton.addEventListener("click", () => {
     void useCustomLocation();
+  });
+
+  setCurrentLocationButton.addEventListener("click", () => {
+    void setCurrentWeatherLocation();
+  });
+
+  refreshCurrentLocationButton.addEventListener("click", () => {
+    void setCurrentWeatherLocation();
+  });
+
+  resetWeatherLocationButton.addEventListener("click", () => {
+    resetToDefaultWeatherLocation();
   });
 
   customLocationInput.addEventListener("keydown", (event) => {
@@ -2296,6 +2550,15 @@ function init(): void {
     setActivePresetLocation(savedLocationState.presetKey);
   } else if (isLocationKey(locationSelect.value)) {
     setActivePresetLocation(locationSelect.value);
+  }
+  weatherLocationState = loadWeatherLocationState();
+  renderWeatherLocationControls();
+  setCurrentLocationButtonsBusy(false);
+  if (weatherLocationState.mode === "current") {
+    setActiveCurrentWeatherLocation(weatherLocationState.lat, weatherLocationState.lon, CURRENT_WEATHER_LABEL);
+    setWeatherLocationStatus("現在地の天気を表示中", "success");
+  } else {
+    setWeatherLocationStatus("固定地点の天気を表示しています");
   }
 
   setTodayLabel();
