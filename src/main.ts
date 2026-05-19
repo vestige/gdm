@@ -137,6 +137,7 @@ const DAILY_BUDDY_LOG_STORAGE_KEY = "gdm:dailyBuddyLog";
 const BUDDY_PREFERENCE_STORAGE_KEY = "gdm:buddyPreference";
 const DAILY_READING_LOG_STORAGE_KEY = "gdm:dailyReadingLog";
 const CURRENT_WEATHER_LABEL = "現在地周辺";
+const DEFAULT_PROFILE_NAME = "匿名さん";
 let latestQuoteText = "";
 let currentMoodLog: MoodLog = {};
 let currentLuckyBoxEntry: LuckyBoxEntry | null = null;
@@ -1252,7 +1253,8 @@ function replayCardAnimation(element: HTMLElement): void {
 
 function drawFortune(): void {
   const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
-  const seed = getTodaySeed(nameInput.value);
+  const profileName = normalizeProfileName(nameInput.value) || activeProfileName || DEFAULT_PROFILE_NAME;
+  const seed = getTodaySeed(profileName);
 
   const fortune = pickBySeed(fortunes, seed, 1);
   const color = pickBySeed(luckyColors, seed, 3);
@@ -2286,13 +2288,7 @@ async function useCustomLocation(): Promise<void> {
 function showMorningCards(): void {
   const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
   nameInput.setCustomValidity("");
-  const submittedName = normalizeProfileName(nameInput.value);
-  if (!submittedName) {
-    nameInput.setCustomValidity("名前を入れてください");
-    nameInput.reportValidity();
-    nameInput.setCustomValidity("");
-    return;
-  }
+  const submittedName = normalizeProfileName(nameInput.value) || DEFAULT_PROFILE_NAME;
 
   activeProfileName = submittedName;
   drawFortune();
