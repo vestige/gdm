@@ -1328,6 +1328,10 @@ function pickDailyBuddyMessage(dateKey: string, type: BuddyType): string {
   return pickBySeed(buddyMessages, seed, 5);
 }
 
+function getBuddyLogKey(dateKey: string, type: BuddyType): string {
+  return `${dateKey}:${type}`;
+}
+
 async function fetchDogImageUrl(): Promise<string> {
   const response = await fetch(DOG_IMAGE_API_ENDPOINT);
   if (!response.ok) {
@@ -1363,12 +1367,12 @@ async function fetchBuddyImageUrl(type: BuddyType): Promise<string> {
   return type === "cat" ? fetchCatImageUrl() : fetchDogImageUrl();
 }
 
-async function loadDailyBuddy(forceRefresh = false): Promise<void> {
+async function loadDailyBuddy(): Promise<void> {
   const todayKey = getLocalDateKey();
   const buddyLog = loadDailyBuddyLog();
-  const todayBuddy = buddyLog[todayKey];
+  const todayBuddy = buddyLog[getBuddyLogKey(todayKey, activeBuddyPreference)] ?? buddyLog[todayKey];
 
-  if (!forceRefresh && isBuddyEntry(todayBuddy) && todayBuddy.type === activeBuddyPreference) {
+  if (isBuddyEntry(todayBuddy) && todayBuddy.type === activeBuddyPreference) {
     currentBuddyRequestToken += 1;
     showBuddyImage(todayBuddy, currentBuddyRequestToken, "今日はこの子が相棒です");
     return;
@@ -1393,7 +1397,7 @@ async function loadDailyBuddy(forceRefresh = false): Promise<void> {
 
     const isSaved = saveDailyBuddyLog({
       ...buddyLog,
-      [todayKey]: entry
+      [getBuddyLogKey(todayKey, activeBuddyPreference)]: entry
     });
 
     showBuddyImage(
@@ -2157,7 +2161,7 @@ function setupEvents(): void {
       activeBuddyPreference = selectedType;
       setBuddyTypeButtons(selectedType);
       saveBuddyPreference(selectedType);
-      void loadDailyBuddy(true);
+      void loadDailyBuddy();
     });
   });
 }
