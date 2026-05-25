@@ -45,6 +45,8 @@ type LuckyBoxLog = Record<string, LuckyBoxEntry>;
 type MoodStatusTone = "default" | "error" | "success";
 type LocationStatusTone = "default" | "error" | "success";
 type BuddyType = "dog" | "cat";
+type OutfitProfile = "women" | "men";
+type FashionMode = "commute" | "casual" | "trend";
 type MoodGraphEntry = {
   label: string;
   mood: MoodLevel | 0;
@@ -75,6 +77,37 @@ type ReadingSource = {
 type ReadingPickResult = {
   item: ReadingItem;
   usedFallback: boolean;
+};
+type WeatherSnapshot = {
+  currentTemp?: number;
+  currentCode?: number;
+  eveningTemp?: number;
+  eveningRain?: number;
+  maxTempUntilEvening?: number;
+  minTempUntilEvening?: number;
+  maxRainUntilEvening?: number;
+  tempGap?: number;
+};
+type OutfitAdvice = {
+  summary: string;
+  top: string;
+  outer: string;
+  bottoms: string;
+  shoes: string;
+  note: string;
+  keywords: string[];
+};
+type FashionLink = {
+  title: string;
+  source: string;
+  description: string;
+  url: string;
+};
+type FashionSourceTemplate = {
+  source: string;
+  domain: string;
+  queryBase: string;
+  title: string;
 };
 type SavedLocationState =
   | {
@@ -126,6 +159,8 @@ const WEATHER_LOCATION_STORAGE_KEY = "gdm:weatherLocation";
 const MOOD_LOG_STORAGE_KEY = "gdm:moodLog";
 const NAME_STORAGE_KEY = "gdm:profileName";
 const LUCKY_BOX_LOG_STORAGE_KEY = "gdm:luckyBoxLog";
+const OUTFIT_PROFILE_STORAGE_KEY = "gdm:outfitProfile";
+const FASHION_MODE_STORAGE_KEY = "gdm:fashionMode";
 const GSI_GEOCODING_API_ENDPOINT = "https://msearch.gsi.go.jp/address-search/AddressSearch";
 const GEOCODING_API_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
@@ -148,6 +183,9 @@ let currentBuddyRequestToken = 0;
 let currentReadingRequestToken = 0;
 let weatherLocationState: WeatherLocationState = { mode: "default" };
 let isCurrentLocationBusy = false;
+let activeOutfitProfile: OutfitProfile = "women";
+let latestWeatherSnapshot: WeatherSnapshot | null = null;
+let activeFashionMode: FashionMode = "commute";
 const moodOptions = [
   { value: 1, emoji: "😴", label: "低め" },
   { value: 2, emoji: "😐", label: "ぼちぼち" },
@@ -290,6 +328,49 @@ const techReadingFallbackItems: ReadingItem[] = [
   }
 ];
 
+const fashionSourceTemplates: Record<OutfitProfile, Record<FashionMode, FashionSourceTemplate>> = {
+  women: {
+    commute: {
+      title: "通勤コーデの実例を見る",
+      source: "Oggi.jp",
+      domain: "oggi.jp",
+      queryBase: "通勤 コーデ レディース きれいめ"
+    },
+    casual: {
+      title: "カジュアルコーデを探す",
+      source: "WEAR",
+      domain: "wear.jp",
+      queryBase: "レディース カジュアル コーデ"
+    },
+    trend: {
+      title: "トレンド記事を読む",
+      source: "FASHIONSNAP",
+      domain: "fashionsnap.com",
+      queryBase: "レディース ファッション トレンド"
+    }
+  },
+  men: {
+    commute: {
+      title: "通勤コーデの実例を見る",
+      source: "MEN'S NON-NO WEB",
+      domain: "mensnonno.jp",
+      queryBase: "メンズ 通勤 コーデ きれいめ"
+    },
+    casual: {
+      title: "カジュアルコーデを探す",
+      source: "WEAR",
+      domain: "wear.jp",
+      queryBase: "メンズ カジュアル コーデ"
+    },
+    trend: {
+      title: "トレンド記事を読む",
+      source: "UOMO",
+      domain: "webuomo.jp",
+      queryBase: "メンズ ファッション トレンド"
+    }
+  }
+};
+
 const buddyMessages = [
   "今日もぼちぼちいきましょう",
   "肩の力を抜いていきましょう",
@@ -383,6 +464,14 @@ function getMoodOption(mood: MoodLevel): (typeof moodOptions)[number] {
   return moodOptions.find((option) => option.value === mood) ?? moodOptions[2];
 }
 
+function isOutfitProfile(value: string): value is OutfitProfile {
+  return value === "women" || value === "men";
+}
+
+function isFashionMode(value: string): value is FashionMode {
+  return value === "commute" || value === "casual" || value === "trend";
+}
+
 function isLuckyBoxResult(value: unknown): value is LuckyBoxResult {
   if (!value || typeof value !== "object") {
     return false;
@@ -463,6 +552,58 @@ function setWeatherLocationStatus(message: string, tone: "default" | "error" | "
   }
 
   status.classList.add("text-slate-500");
+}
+
+function loadOutfitProfile(): OutfitProfile {
+  try {
+    const stored = localStorage.getItem(OUTFIT_PROFILE_STORAGE_KEY);
+    return stored && isOutfitProfile(stored) ? stored : "women";
+  } catch (error) {
+    console.warn("服装プロフィールの読み込みに失敗しました", error);
+    return "women";
+  }
+}
+
+function saveOutfitProfile(profile: OutfitProfile): void {
+  try {
+    localStorage.setItem(OUTFIT_PROFILE_STORAGE_KEY, profile);
+  } catch (error) {
+    console.warn("服装プロフィールの保存に失敗しました", error);
+  }
+}
+
+function setOutfitProfileButtons(profile: OutfitProfile): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-outfit-profile]").forEach((button) => {
+    const isSelected = button.dataset.outfitProfile === profile;
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.classList.toggle("buddy-type-button-active", isSelected);
+  });
+}
+
+function loadFashionMode(): FashionMode {
+  try {
+    const stored = localStorage.getItem(FASHION_MODE_STORAGE_KEY);
+    return stored && isFashionMode(stored) ? stored : "commute";
+  } catch (error) {
+    console.warn("ファッション表示モードの読み込みに失敗しました", error);
+    return "commute";
+  }
+}
+
+function saveFashionMode(mode: FashionMode): void {
+  try {
+    localStorage.setItem(FASHION_MODE_STORAGE_KEY, mode);
+  } catch (error) {
+    console.warn("ファッション表示モードの保存に失敗しました", error);
+  }
+}
+
+function setFashionModeButtons(mode: FashionMode): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-fashion-mode]").forEach((button) => {
+    const isSelected = button.dataset.fashionMode === mode;
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.classList.toggle("buddy-type-button-active", isSelected);
+  });
 }
 
 function renderWeatherLocationControls(): void {
@@ -1836,6 +1977,312 @@ async function loadDailyReadings(forceRefresh = false): Promise<void> {
   }
 }
 
+function formatOptionalMetric(value: number | undefined, suffix: string): string {
+  return typeof value === "number" ? `${Math.round(value)}${suffix}` : "---";
+}
+
+function buildWeatherMetricSummary(snapshot: WeatherSnapshot): string {
+  const pieces = [
+    `いま ${formatOptionalMetric(snapshot.currentTemp, "℃")}`,
+    `18時 ${formatOptionalMetric(snapshot.eveningTemp, "℃")}`,
+    `最大降水 ${formatOptionalMetric(snapshot.maxRainUntilEvening ?? snapshot.eveningRain, "%")}`
+  ];
+
+  return pieces.join(" ・ ");
+}
+
+function getTemperatureSearchLabel(snapshot: WeatherSnapshot): string {
+  const reference =
+    snapshot.maxTempUntilEvening ??
+    snapshot.currentTemp ??
+    snapshot.eveningTemp ??
+    20;
+
+  if (reference <= 12) return "12度前後";
+  if (reference <= 16) return "15度前後";
+  if (reference <= 19) return "18度前後";
+  if (reference <= 23) return "20度前後";
+  if (reference <= 26) return "25度前後";
+  if (reference <= 29) return "28度前後";
+  return "30度前後";
+}
+
+function buildSearchPhrase(parts: Array<string | false | null | undefined>): string {
+  return parts
+    .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+    .join(" ");
+}
+
+function buildGoogleSiteSearchUrl(domain: string, query: string): string {
+  return `https://www.google.com/search?hl=ja&q=${encodeURIComponent(`site:${domain} ${query}`)}`;
+}
+
+function getHourlyValuesForWeatherWindow(times: string[], values: number[], targetHour: number): number[] {
+  const todayKey = getLocalDateKey();
+  const currentHour = new Date().getHours();
+  const startHour = Math.min(currentHour, targetHour);
+  const endHour = Math.max(currentHour, targetHour);
+
+  return times.reduce<number[]>((result, time, index) => {
+    if (!time.startsWith(`${todayKey}T`)) {
+      return result;
+    }
+
+    const hour = Number(time.slice(11, 13));
+    const value = values[index];
+    if (!Number.isInteger(hour) || hour < startHour || hour > endHour || typeof value !== "number") {
+      return result;
+    }
+
+    result.push(value);
+    return result;
+  }, []);
+}
+
+function buildWeatherSnapshot(
+  currentTemperature: number | undefined,
+  currentCode: number | undefined,
+  hourlyTimes: string[],
+  hourlyTemps: number[],
+  hourlyRainProb: number[]
+): WeatherSnapshot {
+  const eveningIndex = findHourlyIndex(hourlyTimes, 18);
+  const eveTemp = eveningIndex >= 0 ? hourlyTemps[eveningIndex] : undefined;
+  const eveRain = eveningIndex >= 0 ? hourlyRainProb[eveningIndex] : undefined;
+  const temps = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyTemps, 18);
+  const rains = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyRainProb, 18);
+  const maxTempUntilEvening = temps.length > 0 ? Math.max(...temps) : currentTemperature;
+  const minTempUntilEvening = temps.length > 0 ? Math.min(...temps) : currentTemperature;
+  const maxRainUntilEvening = rains.length > 0 ? Math.max(...rains) : eveRain;
+  const tempGap =
+    typeof maxTempUntilEvening === "number" && typeof minTempUntilEvening === "number"
+      ? maxTempUntilEvening - minTempUntilEvening
+      : undefined;
+
+  return {
+    currentTemp: currentTemperature,
+    currentCode,
+    eveningTemp: typeof eveTemp === "number" ? eveTemp : undefined,
+    eveningRain: typeof eveRain === "number" ? eveRain : undefined,
+    maxTempUntilEvening,
+    minTempUntilEvening,
+    maxRainUntilEvening,
+    tempGap
+  };
+}
+
+function buildOutfitAdvice(profile: OutfitProfile, snapshot: WeatherSnapshot): OutfitAdvice {
+  const current = snapshot.currentTemp ?? 20;
+  const evening = snapshot.eveningTemp ?? current;
+  const warmest = snapshot.maxTempUntilEvening ?? Math.max(current, evening);
+  const coolest = snapshot.minTempUntilEvening ?? Math.min(current, evening);
+  const rain = snapshot.maxRainUntilEvening ?? snapshot.eveningRain ?? 0;
+  const tempGap = snapshot.tempGap ?? Math.max(warmest - coolest, Math.abs(current - evening));
+  const needsRainSupport = rain >= 40;
+  const needsLayer = tempGap >= 6 || evening <= 18 || rain >= 50;
+  let summary = "";
+  let top = "";
+  let outer = "";
+  let bottoms = "";
+  let shoes = "";
+
+  if (warmest <= 12) {
+    summary = "しっかり暖かく。厚手トップスにアウターを重ねたい日です。";
+    top = profile === "women" ? "長袖ニットや厚手カットソー" : "長袖ニットやスウェット";
+    outer = profile === "women" ? "ウール調コートや中厚手ジャケット" : "コートや中厚手ブルゾン";
+    bottoms = profile === "women" ? "フルレングスのパンツや厚みのあるスカート" : "フルレングスのパンツ";
+    shoes = profile === "women" ? "ブーツや甲が覆われる靴" : "レザーシューズやしっかりめのスニーカー";
+  } else if (warmest <= 16) {
+    summary = "長袖ベースに軽めの羽織りを足すとちょうどよさそうです。";
+    top = profile === "women" ? "長袖ブラウスや薄手ニット" : "長袖シャツや薄手ニット";
+    outer = profile === "women" ? "カーディガンやライトジャケット" : "シャツジャケットやライトブルゾン";
+    bottoms = profile === "women" ? "パンツやロングスカート" : "チノやスラックス";
+    shoes = profile === "women" ? "ローファーやスニーカー" : "ローファーやスニーカー";
+  } else if (warmest <= 21) {
+    summary = "日中は軽めでも、薄手の羽織りを持っておくと安心です。";
+    top = profile === "women" ? "半袖ニットやブラウス" : "Tシャツや薄手シャツ";
+    outer = profile === "women" ? "薄手カーディガンやシャツ羽織り" : "シャツ羽織りや軽いカーディガン";
+    bottoms = profile === "women" ? "きれいめパンツやデニム" : "スラックスやきれいめデニム";
+    shoes = profile === "women" ? "パンプスやきれいめスニーカー" : "スニーカーや軽めの革靴";
+  } else if (warmest <= 25) {
+    summary = "軽めでOK。冷房と夕方に備えて薄手の一枚があると便利です。";
+    top = profile === "women" ? "半袖トップスや薄手ブラウス" : "半袖Tシャツやポロシャツ";
+    outer = profile === "women" ? "薄手カーディガンやシアーシャツ" : "薄手シャツやライトカーディガン";
+    bottoms = profile === "women" ? "ワイドパンツや軽めのスカート" : "軽めのスラックスやイージーパンツ";
+    shoes = profile === "women" ? "フラットシューズやスニーカー" : "スニーカーや軽めのローファー";
+  } else if (warmest <= 29) {
+    summary = "かなり軽めでよさそうです。通気性と着心地を優先したい日です。";
+    top = profile === "women" ? "半袖カットソーや涼しいブラウス" : "通気性のよいTシャツや半袖シャツ";
+    outer = profile === "women" ? "基本は不要。冷房用の薄手シャツがあると安心" : "基本は不要。冷房用の薄手シャツがあると安心";
+    bottoms = profile === "women" ? "軽い素材のパンツやスカート" : "通気性のよいパンツ";
+    shoes = profile === "women" ? "サンダル見えしすぎない軽い靴" : "通気性のよいスニーカー";
+  } else {
+    summary = "真夏寄り。涼しさ優先で、汗ばみ対策も意識したい日です。";
+    top = profile === "women" ? "涼しい半袖トップスや吸汗速乾素材" : "吸汗速乾のTシャツや半袖シャツ";
+    outer = profile === "women" ? "基本は不要。日差し避けの薄手シャツがあると便利" : "基本は不要。日差し避けの薄手シャツがあると便利";
+    bottoms = profile === "women" ? "風が通る軽いボトムス" : "軽くて乾きやすいパンツ";
+    shoes = profile === "women" ? "蒸れにくい軽めの靴" : "蒸れにくいスニーカー";
+  }
+
+  if (needsRainSupport) {
+    shoes += "。撥水系だとさらに安心です。";
+  }
+
+  const notes: string[] = [];
+  if (needsLayer) {
+    notes.push(
+      evening <= 16
+        ? "帰りは冷えやすいので、脱ぎ着しやすい羽織りを前提にすると合わせやすいです。"
+        : "日中と夕方の差があるので、温度調整しやすい重ね方が向いています。"
+    );
+  }
+  if (rain >= 60) {
+    notes.push("雨の可能性が高めなので、折りたたみ傘と濡れても整えやすい足元が安心です。");
+  } else if (rain >= 30) {
+    notes.push("にわか雨を少し気にしたい日です。汚れが目立ちにくい色や素材だと扱いやすいです。");
+  }
+  if (warmest >= 27 && evening >= 24) {
+    notes.push("汗ばみやすいので、通気性の良い素材やインナーを優先すると快適です。");
+  }
+
+  return {
+    summary,
+    top,
+    outer,
+    bottoms,
+    shoes,
+    note: notes.join(" "),
+    keywords: Array.from(
+      new Set([
+        profile === "women" ? "レディース" : "メンズ",
+        getTemperatureSearchLabel(snapshot),
+        needsLayer ? "羽織り" : "軽め",
+        rain >= 40 ? "雨の日" : "通勤",
+        warmest >= 25 ? "涼しめ" : "きれいめ"
+      ])
+    )
+  };
+}
+
+function setOutfitLoadingState(message = "天気から服装を考えています..."): void {
+  getElementByIdOrThrow<HTMLElement>("outfitStatus").textContent = message;
+  getElementByIdOrThrow<HTMLElement>("outfitSummary").textContent = "読み込み中...";
+  getElementByIdOrThrow<HTMLElement>("outfitReason").textContent = "";
+  getElementByIdOrThrow<HTMLElement>("outfitTop").textContent = "---";
+  getElementByIdOrThrow<HTMLElement>("outfitOuter").textContent = "---";
+  getElementByIdOrThrow<HTMLElement>("outfitBottoms").textContent = "---";
+  getElementByIdOrThrow<HTMLElement>("outfitShoes").textContent = "---";
+  getElementByIdOrThrow<HTMLElement>("outfitNote").textContent = "";
+}
+
+function renderOutfitCard(snapshot: WeatherSnapshot): void {
+  const advice = buildOutfitAdvice(activeOutfitProfile, snapshot);
+  const profileLabel = activeOutfitProfile === "women" ? "女性向け" : "男性向け";
+
+  getElementByIdOrThrow<HTMLElement>("outfitStatus").textContent = `${profileLabel}の服装ヒントを表示中`;
+  getElementByIdOrThrow<HTMLElement>("outfitSummary").textContent = advice.summary;
+  getElementByIdOrThrow<HTMLElement>("outfitReason").textContent = buildWeatherMetricSummary(snapshot);
+  getElementByIdOrThrow<HTMLElement>("outfitTop").textContent = advice.top;
+  getElementByIdOrThrow<HTMLElement>("outfitOuter").textContent = advice.outer;
+  getElementByIdOrThrow<HTMLElement>("outfitBottoms").textContent = advice.bottoms;
+  getElementByIdOrThrow<HTMLElement>("outfitShoes").textContent = advice.shoes;
+  getElementByIdOrThrow<HTMLElement>("outfitNote").textContent = advice.note || "今日はこの組み立てを軸にすると選びやすそうです。";
+}
+
+function setFashionInfoLoadingState(message = "日本語のファッション情報を整えています..."): void {
+  getElementByIdOrThrow<HTMLElement>("fashionInfoStatus").textContent = message;
+  getElementByIdOrThrow<HTMLElement>("fashionInfoLead").textContent = "読み込み中...";
+  getElementByIdOrThrow<HTMLElement>("fashionInfoDescription").textContent = "";
+  getElementByIdOrThrow<HTMLElement>("fashionInfoKeywords").replaceChildren();
+  getElementByIdOrThrow<HTMLElement>("fashionInfoSource").textContent = "---";
+  const link = getElementByIdOrThrow<HTMLAnchorElement>("fashionInfoLink");
+  link.href = "#";
+  link.textContent = "続きを読む";
+}
+
+function getFashionModeLabel(mode: FashionMode): string {
+  if (mode === "casual") {
+    return "カジュアル";
+  }
+  if (mode === "trend") {
+    return "トレンド";
+  }
+  return "通勤";
+}
+
+function buildFashionLink(profile: OutfitProfile, mode: FashionMode, snapshot: WeatherSnapshot): FashionLink {
+  const profileLabel = profile === "women" ? "レディース" : "メンズ";
+  const rain = snapshot.maxRainUntilEvening ?? snapshot.eveningRain ?? 0;
+  const tempGap = snapshot.tempGap ?? 0;
+  const tempLabel = getTemperatureSearchLabel(snapshot);
+  const template = fashionSourceTemplates[profile][mode];
+  const modeHint =
+    mode === "commute"
+      ? "通勤でも取り入れやすい"
+      : mode === "casual"
+        ? "休日にも寄せやすい"
+        : "今っぽさを足しやすい";
+  const detailPhrase = buildSearchPhrase([tempLabel, modeHint, tempGap >= 6 ? "羽織り" : "", rain >= 40 ? "雨の日" : ""]);
+
+  return {
+    title: template.title,
+    source: template.source,
+    description: `${detailPhrase} ${profileLabel}コーデを探しやすい導線です。`,
+    url: buildGoogleSiteSearchUrl(
+      template.domain,
+      buildSearchPhrase([
+        tempLabel,
+        template.queryBase,
+        rain >= 40 ? "雨の日" : "",
+        tempGap >= 6 ? "羽織り" : "",
+        mode === "trend" ? "2026" : ""
+      ])
+    )
+  };
+}
+
+function renderFashionKeywordChips(keywords: string[]): void {
+  const container = getElementByIdOrThrow<HTMLElement>("fashionInfoKeywords");
+  const chips = keywords.map((keyword) => {
+    const chip = document.createElement("span");
+    chip.className = "fashion-keyword-chip rounded-full px-3 py-1 text-xs font-semibold text-slate-700";
+    chip.textContent = keyword;
+    return chip;
+  });
+
+  container.replaceChildren(...chips);
+}
+
+function renderFashionInfoCard(snapshot: WeatherSnapshot): void {
+  const advice = buildOutfitAdvice(activeOutfitProfile, snapshot);
+  const profileLabel = activeOutfitProfile === "women" ? "女性向け" : "男性向け";
+  const modeLabel = getFashionModeLabel(activeFashionMode);
+  const linkData = buildFashionLink(activeOutfitProfile, activeFashionMode, snapshot);
+  const lead = `${profileLabel}の${modeLabel}は「${advice.summary.replace(/。$/u, "")}」を軸にすると自然です。`;
+  const description = `${buildWeatherMetricSummary(snapshot)} をふまえて、${linkData.source} で見つけやすい導線にしています。`;
+  const source = getElementByIdOrThrow<HTMLElement>("fashionInfoSource");
+  const link = getElementByIdOrThrow<HTMLAnchorElement>("fashionInfoLink");
+
+  getElementByIdOrThrow<HTMLElement>("fashionInfoStatus").textContent = "日本向けのソースに寄せてあります";
+  getElementByIdOrThrow<HTMLElement>("fashionInfoLead").textContent = lead;
+  getElementByIdOrThrow<HTMLElement>("fashionInfoDescription").textContent = description;
+  renderFashionKeywordChips(advice.keywords.slice(0, 3));
+  source.textContent = linkData.source;
+  link.href = linkData.url;
+  link.textContent = "続きを読む";
+}
+
+function refreshWeatherRelatedCards(): void {
+  if (!latestWeatherSnapshot) {
+    setOutfitLoadingState("天気が取れたら服装を出します");
+    setFashionInfoLoadingState("天気が取れたら日本向けの情報を出します");
+    return;
+  }
+
+  renderOutfitCard(latestWeatherSnapshot);
+  renderFashionInfoCard(latestWeatherSnapshot);
+}
+
 async function loadQuote(name = ""): Promise<void> {
   const quoteText = getElementByIdOrThrow<HTMLElement>("quoteText");
   quoteText.textContent = "名言を取得中です...";
@@ -2201,6 +2648,8 @@ async function loadWeather(): Promise<void> {
 
   try {
     weatherStatus.textContent = `${officeLocation.name} の天気を取得中です...`;
+    setOutfitLoadingState("天気から服装を考えています...");
+    setFashionInfoLoadingState("日本向けのファッション情報を整えています...");
 
     const url =
       `https://api.open-meteo.com/v1/forecast` +
@@ -2221,12 +2670,15 @@ async function loadWeather(): Promise<void> {
     const hourlyTimes = data.hourly?.time ?? [];
     const hourlyTemps = data.hourly?.temperature_2m ?? [];
     const hourlyRainProb = data.hourly?.precipitation_probability ?? [];
+    const snapshot = buildWeatherSnapshot(currentTemperature, currentCode, hourlyTimes, hourlyTemps, hourlyRainProb);
+    latestWeatherSnapshot = snapshot;
     const eveningIndex = findHourlyIndex(hourlyTimes, 18);
 
     currentTemp.textContent = typeof currentTemperature === "number" ? `${currentTemperature} ℃` : "取得できませんでした";
     weatherEmoji.textContent = weatherCodeToEmoji(currentCode);
     weatherStatus.textContent = `${officeLocation.name} の予報です`;
     setWeatherBackground(classifyWeatherForBackground(currentCode));
+    refreshWeatherRelatedCards();
 
     if (eveningIndex < 0) {
       eveningTemp.textContent = "取得できませんでした";
@@ -2243,12 +2695,15 @@ async function loadWeather(): Promise<void> {
     weatherComment.textContent = buildWeatherComment(typeof eveTemp === "number" ? eveTemp : 20, typeof eveRain === "number" ? eveRain : 0);
   } catch (error) {
     console.error(error);
+    latestWeatherSnapshot = null;
     weatherStatus.textContent = "天気の取得に失敗しました";
     currentTemp.textContent = "---";
     eveningTemp.textContent = "---";
     eveningRain.textContent = "---";
     weatherComment.textContent = "通信状況を確認して、もう一度読み込んでみてください。";
     setWeatherBackground("cloudy");
+    setOutfitLoadingState("天気を取得できなかったため、服装ヒントを出せませんでした");
+    setFashionInfoLoadingState("天気を取得できなかったため、ファッション情報を出せませんでした");
   }
 }
 
@@ -2309,6 +2764,8 @@ function setupEvents(): void {
   const setCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("setCurrentLocationButton");
   const refreshCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("refreshCurrentLocationButton");
   const resetWeatherLocationButton = getElementByIdOrThrow<HTMLButtonElement>("resetWeatherLocationButton");
+  const outfitProfileButtons = document.querySelectorAll<HTMLButtonElement>("[data-outfit-profile]");
+  const fashionModeButtons = document.querySelectorAll<HTMLButtonElement>("[data-fashion-mode]");
   const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
   const luckyBoxButtons = getLuckyBoxButtons();
   const buddyTypeButtons = document.querySelectorAll<HTMLButtonElement>("[data-buddy-type]");
@@ -2365,6 +2822,34 @@ function setupEvents(): void {
 
   resetWeatherLocationButton.addEventListener("click", () => {
     resetToDefaultWeatherLocation();
+  });
+
+  outfitProfileButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextProfile = button.dataset.outfitProfile;
+      if (!nextProfile || !isOutfitProfile(nextProfile) || nextProfile === activeOutfitProfile) {
+        return;
+      }
+
+      activeOutfitProfile = nextProfile;
+      setOutfitProfileButtons(nextProfile);
+      saveOutfitProfile(nextProfile);
+      refreshWeatherRelatedCards();
+    });
+  });
+
+  fashionModeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextMode = button.dataset.fashionMode;
+      if (!nextMode || !isFashionMode(nextMode) || nextMode === activeFashionMode) {
+        return;
+      }
+
+      activeFashionMode = nextMode;
+      setFashionModeButtons(nextMode);
+      saveFashionMode(nextMode);
+      refreshWeatherRelatedCards();
+    });
   });
 
   customLocationInput.addEventListener("keydown", (event) => {
@@ -2562,7 +3047,13 @@ function init(): void {
   renderLuckyBoxCard();
   currentMoodLog = loadMoodLog();
   activeBuddyPreference = loadBuddyPreference();
+  activeOutfitProfile = loadOutfitProfile();
+  activeFashionMode = loadFashionMode();
   setBuddyTypeButtons(activeBuddyPreference);
+  setOutfitProfileButtons(activeOutfitProfile);
+  setFashionModeButtons(activeFashionMode);
+  setOutfitLoadingState("天気が取れたら服装を出します");
+  setFashionInfoLoadingState("天気が取れたら日本向けの情報を出します");
   setupEvents();
   void loadWeather();
   void loadQuote();

@@ -100,6 +100,18 @@
   background-image: linear-gradient(145deg, rgba(224, 231, 255, 0.94) 0%, rgba(240, 249, 255, 0.95) 100%);
 }
 
+.outfit-guide-panel {
+  background-image: linear-gradient(145deg, rgba(255, 251, 235, 0.95) 0%, rgba(255, 255, 255, 0.96) 100%);
+}
+
+.fashion-info-panel {
+  background-image: linear-gradient(145deg, rgba(239, 246, 255, 0.95) 0%, rgba(248, 250, 252, 0.98) 100%);
+}
+
+.fashion-keyword-chip {
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.95) 0%, rgba(226, 232, 240, 0.88) 100%);
+}
+
 .mood-option {
   transition:
     transform 180ms ease,
