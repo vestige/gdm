@@ -1,29 +1,10 @@
-- [x] 今の場所を選択できるようにする（東京、栃木）
-- [x] 場所の選択のデフォルトはキャッシュできる？
-- [x] 天気は Open-Meteo
-- [x] 豆知識は uselessfacts
-- [x] 今日は何の日は Wikimedia
-- [x] 今日の運勢のバリエーションを増やしたい
-- [x] 名言は serverless 経由で ZenQuotes
-- [x] TailWindの導入
-- [x] TypeScriptの導入
-- [x] 天気連動ミニ提案を Google Places で表示（失敗時はローカルプリセット）
-- [x] クーポン/セール情報を「場所別お得ヒント」カード内に追加
-- [ ] ランチ相場・混雑ヒントの表示
-- [ ] 交通・移動お得情報の表示
-
-## Vercel + Google本番化
-- [x] Vercelアカウント作成（GitHubログイン）
-- [x] `vestige/gdm` を Vercel に Import
-- [x] Google Cloud プロジェクト作成
-- [x] Google Cloud の課金（Billing）を有効化
-- [x] `Places API` を有効化
-- [x] APIキーを作成
-- [x] APIキーの制限を設定（API制限: Places API）
-- [x] Vercel の Environment Variables に `GOOGLE_MAPS_API_KEY` を追加
-- [x] Vercel を再デプロイ
-- [x] 本番URLで「場所別お得ヒント」が Google 由来で表示されるか確認
-- [x] GitHub Pagesワークフローは残して併用する
+### TODO
+* 今日の服装カードに切り替えスイッチを付けて、明日の服装を表示できるようにする
+* 今日のミニチャレンジ廃止
+* 今日の名言のバリエーションを増やす
+* 技術ニュースのRuby weeklyは外す
+* 帰りのひとことをバリエーション増やす
+* ブラウザ表示のときのカードの配置を見直す
 
 ### memo
 > npm run dev
