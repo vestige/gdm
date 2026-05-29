@@ -7,7 +7,6 @@ import {
   luckyBoxNormalResults,
   luckyBoxRareResult,
   luckyColors,
-  miniChallengeCategories,
   quotes,
   type LuckyBoxResult
 } from "./data";
@@ -47,6 +46,7 @@ type MoodStatusTone = "default" | "error" | "success";
 type LocationStatusTone = "default" | "error" | "success";
 type BuddyType = "dog" | "cat";
 type OutfitProfile = "women" | "men";
+type OutfitDay = "today" | "tomorrow";
 type FashionMode = "commute" | "casual" | "trend";
 type MoodGraphEntry = {
   label: string;
@@ -95,6 +95,7 @@ type WeatherSnapshot = {
   maxRainUntilEvening?: number;
   tempGap?: number;
 };
+type OutfitWeatherSnapshots = Record<OutfitDay, WeatherSnapshot | null>;
 type OutfitAdvice = {
   summary: string;
   top: string;
@@ -193,7 +194,8 @@ let currentReadingRequestToken = 0;
 let weatherLocationState: WeatherLocationState = { mode: "default" };
 let isCurrentLocationBusy = false;
 let activeOutfitProfile: OutfitProfile = "women";
-let latestWeatherSnapshot: WeatherSnapshot | null = null;
+let activeOutfitDay: OutfitDay = "today";
+let latestOutfitSnapshots: OutfitWeatherSnapshots = { today: null, tomorrow: null };
 let activeFashionMode: FashionMode = "commute";
 const moodOptions = [
   { value: 1, emoji: "😴", label: "低め" },
@@ -243,9 +245,9 @@ const cozyReadingSources: ReadingSource[] = [
 ];
 
 const techReadingSources: ReadingSource[] = [
-  { source: "Ruby Weekly", url: "https://rubyweekly.com/rss/" },
-  { source: "Zenn", url: "https://zenn.dev/feed" },
-  { source: "Hacker News", url: "https://hnrss.org/frontpage" }
+  { source: "CodeZine", url: "https://codezine.jp/rss/new/20/index.xml" },
+  { source: "DevelopersIO", url: "https://dev.classmethod.jp/feed/" },
+  { source: "Qiita", url: "https://qiita.com/popular-items/feed.atom" }
 ];
 
 const excludedReadingKeywords = [
@@ -279,8 +281,8 @@ const cozyPriorityKeywords = [
 ];
 
 const techPriorityKeywords = [
-  "ruby",
-  "rails",
+  "aws",
+  "cloud",
   "javascript",
   "typescript",
   "ai",
@@ -318,22 +320,22 @@ const cozyReadingFallbackItems: ReadingItem[] = [
 
 const techReadingFallbackItems: ReadingItem[] = [
   {
-    title: "Ruby Weekly 最新号をチェック",
-    url: "https://rubyweekly.com/",
-    source: "Ruby Weekly",
-    description: "RubyとRails周辺の更新をまとめて追える定番ニュースレターです。"
+    title: "CodeZine の新着記事をチェック",
+    url: "https://codezine.jp/",
+    source: "CodeZine",
+    description: "開発者向けの最新トピックを幅広く追いやすい国内メディアです。"
   },
   {
-    title: "TypeScript / JavaScript の新着を探す",
-    url: "https://zenn.dev/topics/typescript",
-    source: "Zenn",
-    description: "実装寄りの記事が多く、朝に短く読んで今日のヒントを得やすいです。"
+    title: "DevelopersIO の最新記事を読む",
+    url: "https://dev.classmethod.jp/",
+    source: "DevelopersIO",
+    description: "AWS や実装ノウハウの記事が多く、現場寄りの学びを得やすいです。"
   },
   {
-    title: "組み込み・ロボティクス系の話題を追う",
-    url: "https://mag.switch-science.com/",
-    source: "スイッチサイエンス マガジン",
-    description: "Arduino、Raspberry Pi、ハードウェア制作の話題を拾えます。"
+    title: "Qiita 人気記事から話題を拾う",
+    url: "https://qiita.com/popular-items",
+    source: "Qiita",
+    description: "その日の注目トピックを短時間で把握しやすい人気記事フィードです。"
   }
 ];
 
@@ -501,6 +503,10 @@ function getMoodOption(mood: MoodLevel): (typeof moodOptions)[number] {
 
 function isOutfitProfile(value: string): value is OutfitProfile {
   return value === "women" || value === "men";
+}
+
+function isOutfitDay(value: string): value is OutfitDay {
+  return value === "today" || value === "tomorrow";
 }
 
 function isFashionMode(value: string): value is FashionMode {
@@ -1034,15 +1040,6 @@ async function searchCustomLocation(query: string): Promise<OfficeLocation> {
   throw new Error("場所が見つかりませんでした");
 }
 
-function getTodayMiniChallenge(): { category: string; text: string } {
-  const category = pickBySeed(miniChallengeCategories, getTodaySeed("mini-challenge-category"), 13);
-  const text = pickBySeed(category.challenges, getTodaySeed(`mini-challenge-${category.category}`), 7);
-  return {
-    category: category.category,
-    text
-  };
-}
-
 function loadLuckyBoxLog(): LuckyBoxLog {
   try {
     const stored = localStorage.getItem(LUCKY_BOX_LOG_STORAGE_KEY);
@@ -1172,12 +1169,6 @@ function getActiveMoodHistory(): MoodHistory {
   }
 
   return currentMoodLog[activeProfileName] ?? {};
-}
-
-function renderMiniChallenge(): void {
-  const miniChallenge = getTodayMiniChallenge();
-  getElementByIdOrThrow<HTMLElement>("miniChallengeCategory").textContent = miniChallenge.category;
-  getElementByIdOrThrow<HTMLElement>("miniChallengeText").textContent = miniChallenge.text;
 }
 
 function getLuckyBoxButtons(): HTMLButtonElement[] {
@@ -2230,14 +2221,15 @@ function buildGoogleSiteSearchUrl(domain: string, query: string): string {
   return `https://www.google.com/search?hl=ja&q=${encodeURIComponent(`site:${domain} ${query}`)}`;
 }
 
-function getHourlyValuesForWeatherWindow(times: string[], values: number[], targetHour: number): number[] {
-  const todayKey = getLocalDateKey();
-  const currentHour = new Date().getHours();
-  const startHour = Math.min(currentHour, targetHour);
-  const endHour = Math.max(currentHour, targetHour);
-
+function getHourlyValuesForWeatherWindow(
+  times: string[],
+  values: number[],
+  dateKey: string,
+  startHour: number,
+  endHour: number
+): number[] {
   return times.reduce<number[]>((result, time, index) => {
-    if (!time.startsWith(`${todayKey}T`)) {
+    if (!time.startsWith(`${dateKey}T`)) {
       return result;
     }
 
@@ -2259,11 +2251,14 @@ function buildWeatherSnapshot(
   hourlyTemps: number[],
   hourlyRainProb: number[]
 ): WeatherSnapshot {
-  const eveningIndex = findHourlyIndex(hourlyTimes, 18);
+  const todayKey = getLocalDateKey();
+  const currentHour = new Date().getHours();
+  const startHour = Math.min(currentHour, 18);
+  const eveningIndex = findHourlyIndex(hourlyTimes, 18, todayKey);
   const eveTemp = eveningIndex >= 0 ? hourlyTemps[eveningIndex] : undefined;
   const eveRain = eveningIndex >= 0 ? hourlyRainProb[eveningIndex] : undefined;
-  const temps = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyTemps, 18);
-  const rains = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyRainProb, 18);
+  const temps = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyTemps, todayKey, startHour, 18);
+  const rains = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyRainProb, todayKey, startHour, 18);
   const maxTempUntilEvening = temps.length > 0 ? Math.max(...temps) : currentTemperature;
   const minTempUntilEvening = temps.length > 0 ? Math.min(...temps) : currentTemperature;
   const maxRainUntilEvening = rains.length > 0 ? Math.max(...rains) : eveRain;
@@ -2275,6 +2270,47 @@ function buildWeatherSnapshot(
   return {
     currentTemp: currentTemperature,
     currentCode,
+    eveningTemp: typeof eveTemp === "number" ? eveTemp : undefined,
+    eveningRain: typeof eveRain === "number" ? eveRain : undefined,
+    maxTempUntilEvening,
+    minTempUntilEvening,
+    maxRainUntilEvening,
+    tempGap
+  };
+}
+
+function buildTomorrowOutfitSnapshot(
+  hourlyTimes: string[],
+  hourlyTemps: number[],
+  hourlyRainProb: number[]
+): WeatherSnapshot | null {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowKey = getLocalDateKey(tomorrow);
+  const eveningIndex = findHourlyIndex(hourlyTimes, 18, tomorrowKey);
+  const eveTemp = eveningIndex >= 0 ? hourlyTemps[eveningIndex] : undefined;
+  const eveRain = eveningIndex >= 0 ? hourlyRainProb[eveningIndex] : undefined;
+  const temps = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyTemps, tomorrowKey, 6, 18);
+  const rains = getHourlyValuesForWeatherWindow(hourlyTimes, hourlyRainProb, tomorrowKey, 6, 18);
+
+  if (temps.length === 0 && typeof eveTemp !== "number" && typeof eveRain !== "number") {
+    return null;
+  }
+
+  const maxTempUntilEvening = temps.length > 0 ? Math.max(...temps) : eveTemp;
+  const minTempUntilEvening = temps.length > 0 ? Math.min(...temps) : eveTemp;
+  const maxRainUntilEvening = rains.length > 0 ? Math.max(...rains) : eveRain;
+  const referenceTemp =
+    temps.find((value, index) => index >= 2 && typeof value === "number") ??
+    temps[0] ??
+    eveTemp;
+  const tempGap =
+    typeof maxTempUntilEvening === "number" && typeof minTempUntilEvening === "number"
+      ? maxTempUntilEvening - minTempUntilEvening
+      : undefined;
+
+  return {
+    currentTemp: typeof referenceTemp === "number" ? referenceTemp : undefined,
     eveningTemp: typeof eveTemp === "number" ? eveTemp : undefined,
     eveningRain: typeof eveRain === "number" ? eveRain : undefined,
     maxTempUntilEvening,
@@ -2377,7 +2413,31 @@ function buildOutfitAdvice(profile: OutfitProfile, snapshot: WeatherSnapshot): O
   };
 }
 
+function getOutfitDayLabel(day: OutfitDay): string {
+  return day === "tomorrow" ? "明日" : "今日";
+}
+
+function setOutfitDayButtons(day: OutfitDay, hasTomorrowSnapshot: boolean): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-outfit-day]").forEach((button) => {
+    const buttonDay = button.dataset.outfitDay;
+    if (!buttonDay || !isOutfitDay(buttonDay)) {
+      return;
+    }
+
+    const isTomorrowButton = buttonDay === "tomorrow";
+    const isDisabled = isTomorrowButton && !hasTomorrowSnapshot;
+    const isSelected = buttonDay === day;
+
+    button.disabled = isDisabled;
+    button.setAttribute("aria-pressed", String(isSelected));
+    button.classList.toggle("buddy-type-button-active", isSelected);
+    button.classList.toggle("opacity-50", isDisabled);
+    button.classList.toggle("cursor-not-allowed", isDisabled);
+  });
+}
+
 function setOutfitLoadingState(message = "天気から服装を考えています..."): void {
+  getElementByIdOrThrow<HTMLElement>("outfitTitle").textContent = `${getOutfitDayLabel(activeOutfitDay)}の服装ヒント`;
   getElementByIdOrThrow<HTMLElement>("outfitStatus").textContent = message;
   getElementByIdOrThrow<HTMLElement>("outfitSummary").textContent = "読み込み中...";
   getElementByIdOrThrow<HTMLElement>("outfitReason").textContent = "";
@@ -2391,15 +2451,17 @@ function setOutfitLoadingState(message = "天気から服装を考えていま�
 function renderOutfitCard(snapshot: WeatherSnapshot): void {
   const advice = buildOutfitAdvice(activeOutfitProfile, snapshot);
   const profileLabel = activeOutfitProfile === "women" ? "女性向け" : "男性向け";
+  const dayLabel = getOutfitDayLabel(activeOutfitDay);
 
-  getElementByIdOrThrow<HTMLElement>("outfitStatus").textContent = `${profileLabel}の服装ヒントを表示中`;
+  getElementByIdOrThrow<HTMLElement>("outfitTitle").textContent = `${dayLabel}の服装ヒント`;
+  getElementByIdOrThrow<HTMLElement>("outfitStatus").textContent = `${dayLabel}の${profileLabel}の服装ヒントを表示中`;
   getElementByIdOrThrow<HTMLElement>("outfitSummary").textContent = advice.summary;
   getElementByIdOrThrow<HTMLElement>("outfitReason").textContent = buildWeatherMetricSummary(snapshot);
   getElementByIdOrThrow<HTMLElement>("outfitTop").textContent = advice.top;
   getElementByIdOrThrow<HTMLElement>("outfitOuter").textContent = advice.outer;
   getElementByIdOrThrow<HTMLElement>("outfitBottoms").textContent = advice.bottoms;
   getElementByIdOrThrow<HTMLElement>("outfitShoes").textContent = advice.shoes;
-  getElementByIdOrThrow<HTMLElement>("outfitNote").textContent = advice.note || "今日はこの組み立てを軸にすると選びやすそうです。";
+  getElementByIdOrThrow<HTMLElement>("outfitNote").textContent = advice.note || `${dayLabel}はこの組み立てを軸にすると選びやすそうです。`;
 }
 
 function setFashionInfoLoadingState(message = "日本語のファッション情報を整えています..."): void {
@@ -2486,14 +2548,26 @@ function renderFashionInfoCard(snapshot: WeatherSnapshot): void {
 }
 
 function refreshWeatherRelatedCards(): void {
-  if (!latestWeatherSnapshot) {
-    setOutfitLoadingState("天気が取れたら服装を出します");
+  const hasTomorrowSnapshot = Boolean(latestOutfitSnapshots.tomorrow);
+  if (activeOutfitDay === "tomorrow" && !hasTomorrowSnapshot) {
+    activeOutfitDay = "today";
+  }
+
+  const activeOutfitSnapshot = latestOutfitSnapshots[activeOutfitDay];
+  setOutfitDayButtons(activeOutfitDay, hasTomorrowSnapshot);
+
+  if (!activeOutfitSnapshot) {
+    setOutfitLoadingState(
+      activeOutfitDay === "tomorrow"
+        ? "明日の予報が取れないため、服装ヒントを出せませんでした"
+        : "天気が取れたら服装を出します"
+    );
     setFashionInfoLoadingState("天気が取れたら日本向けの情報を出します");
     return;
   }
 
-  renderOutfitCard(latestWeatherSnapshot);
-  renderFashionInfoCard(latestWeatherSnapshot);
+  renderOutfitCard(activeOutfitSnapshot);
+  renderFashionInfoCard(activeOutfitSnapshot);
 }
 
 async function loadQuote(name = ""): Promise<void> {
@@ -2599,30 +2673,53 @@ function weatherCodeToEmoji(code: number | undefined): string {
 }
 
 function buildWeatherComment(eveningTemp: number, eveningRain: number): string {
+  const pickWeatherComment = (key: string, messages: string[]): string =>
+    pickBySeed(messages, getTodaySeed(key), 9);
+
   if (eveningRain >= 60) {
-    return "帰りは雨の可能性が高めです。折りたたみ傘があると安心です。";
+    return pickWeatherComment("weather-comment-rain-heavy", [
+      "帰りは雨の可能性が高めです。折りたたみ傘があると安心です。",
+      "帰宅時間はしっかり雨を意識したいです。傘を忘れないようにしましょう。",
+      "帰りは降られる前提で準備しておくと安心です。足元が濡れにくい靴もおすすめです。"
+    ]);
   }
   if (eveningRain >= 30) {
-    return "帰りは少し雨を気にしておくと良さそうです。空模様を軽くチェックしておきましょう。";
+    return pickWeatherComment("weather-comment-rain-light", [
+      "帰りは少し雨を気にしておくと良さそうです。空模様を軽くチェックしておきましょう。",
+      "にわか雨の可能性があるので、帰る前に一度だけ天気を見ておくと安心です。",
+      "帰り道は雨が気になるかもしれません。軽い雨対策があると余裕を持てそうです。"
+    ]);
   }
   if (eveningTemp <= 10) {
-    return "帰るころはかなりひんやりしそうです。羽織るものがあると安心です。";
+    return pickWeatherComment("weather-comment-cold-strong", [
+      "帰るころはかなりひんやりしそうです。羽織るものがあると安心です。",
+      "帰りは冷え込みそうです。首元を冷やさない準備をしておくと楽です。",
+      "夜は体感が下がりやすそうです。防寒を一段だけ足しておくと安心です。"
+    ]);
   }
   if (eveningTemp <= 16) {
-    return "帰りは少し肌寒いかもしれません。朝より一枚あるとちょうど良さそうです。";
+    return pickWeatherComment("weather-comment-cool", [
+      "帰りは少し肌寒いかもしれません。朝より一枚あるとちょうど良さそうです。",
+      "日が落ちると涼しくなりそうです。軽く羽織れるものがあると安心です。",
+      "帰りは体感が下がりやすいので、温度調整しやすい服装が良さそうです。"
+    ]);
   }
   if (eveningTemp >= 28) {
-    return "帰りの時間もまだ暖かそうです。水分を意識すると良さそうです。";
+    return pickWeatherComment("weather-comment-hot", [
+      "帰りの時間もまだ暖かそうです。水分を意識すると良さそうです。",
+      "夕方以降も暑さが残りそうです。無理せずゆっくり歩くのが良さそうです。",
+      "帰りも気温が高めなので、こまめな水分補給を忘れないようにしましょう。"
+    ]);
   }
-  return "帰りの天気は比較的おだやかそうです。気持ちよく帰れそうですね。";
+  return pickWeatherComment("weather-comment-mild", [
+    "帰りの天気は比較的おだやかそうです。気持ちよく帰れそうですね。",
+    "帰り道は大きな崩れはなさそうです。落ち着いて移動できそうです。",
+    "帰宅時間の空模様は安定しそうです。気楽に帰れそうですね。"
+  ]);
 }
 
-function findHourlyIndex(times: string[], targetHour: number): number {
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
-  const target = `${yyyy}-${mm}-${dd}T${String(targetHour).padStart(2, "0")}:00`;
+function findHourlyIndex(times: string[], targetHour: number, dateKey = getLocalDateKey()): number {
+  const target = `${dateKey}T${String(targetHour).padStart(2, "0")}:00`;
 
   return times.findIndex((time) => time.startsWith(target));
 }
@@ -2883,9 +2980,11 @@ async function loadWeather(): Promise<void> {
     const hourlyTimes = data.hourly?.time ?? [];
     const hourlyTemps = data.hourly?.temperature_2m ?? [];
     const hourlyRainProb = data.hourly?.precipitation_probability ?? [];
-    const snapshot = buildWeatherSnapshot(currentTemperature, currentCode, hourlyTimes, hourlyTemps, hourlyRainProb);
-    latestWeatherSnapshot = snapshot;
-    const eveningIndex = findHourlyIndex(hourlyTimes, 18);
+    latestOutfitSnapshots = {
+      today: buildWeatherSnapshot(currentTemperature, currentCode, hourlyTimes, hourlyTemps, hourlyRainProb),
+      tomorrow: buildTomorrowOutfitSnapshot(hourlyTimes, hourlyTemps, hourlyRainProb)
+    };
+    const eveningIndex = findHourlyIndex(hourlyTimes, 18, getLocalDateKey());
 
     currentTemp.textContent = typeof currentTemperature === "number" ? `${currentTemperature} ℃` : "取得できませんでした";
     weatherEmoji.textContent = weatherCodeToEmoji(currentCode);
@@ -2908,7 +3007,7 @@ async function loadWeather(): Promise<void> {
     weatherComment.textContent = buildWeatherComment(typeof eveTemp === "number" ? eveTemp : 20, typeof eveRain === "number" ? eveRain : 0);
   } catch (error) {
     console.error(error);
-    latestWeatherSnapshot = null;
+    latestOutfitSnapshots = { today: null, tomorrow: null };
     weatherStatus.textContent = "天気の取得に失敗しました";
     currentTemp.textContent = "---";
     eveningTemp.textContent = "---";
@@ -2960,7 +3059,6 @@ function showMorningCards(): void {
 
   activeProfileName = submittedName;
   drawFortune();
-  renderMiniChallenge();
   renderLuckyBoxCard();
   renderMoonPhase();
   renderMoodSection();
@@ -2977,6 +3075,7 @@ function setupEvents(): void {
   const setCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("setCurrentLocationButton");
   const refreshCurrentLocationButton = getElementByIdOrThrow<HTMLButtonElement>("refreshCurrentLocationButton");
   const resetWeatherLocationButton = getElementByIdOrThrow<HTMLButtonElement>("resetWeatherLocationButton");
+  const outfitDayButtons = document.querySelectorAll<HTMLButtonElement>("[data-outfit-day]");
   const outfitProfileButtons = document.querySelectorAll<HTMLButtonElement>("[data-outfit-profile]");
   const fashionModeButtons = document.querySelectorAll<HTMLButtonElement>("[data-fashion-mode]");
   const moodButtons = document.querySelectorAll<HTMLButtonElement>("[data-mood-value]");
@@ -3035,6 +3134,22 @@ function setupEvents(): void {
 
   resetWeatherLocationButton.addEventListener("click", () => {
     resetToDefaultWeatherLocation();
+  });
+
+  outfitDayButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextDay = button.dataset.outfitDay;
+      if (!nextDay || !isOutfitDay(nextDay) || nextDay === activeOutfitDay) {
+        return;
+      }
+
+      if (nextDay === "tomorrow" && !latestOutfitSnapshots.tomorrow) {
+        return;
+      }
+
+      activeOutfitDay = nextDay;
+      refreshWeatherRelatedCards();
+    });
   });
 
   outfitProfileButtons.forEach((button) => {
@@ -3264,6 +3379,7 @@ function init(): void {
   activeFashionMode = loadFashionMode();
   setBuddyTypeButtons(activeBuddyPreference);
   setOutfitProfileButtons(activeOutfitProfile);
+  setOutfitDayButtons(activeOutfitDay, false);
   setFashionModeButtons(activeFashionMode);
   setOutfitLoadingState("天気が取れたら服装を出します");
   setFashionInfoLoadingState("天気が取れたら日本向けの情報を出します");
