@@ -1,4 +1,3 @@
-import "./style.css";
 import { dailyEnglishCards, type DailyEnglishCard } from "./english-data";
 import {
   fortunes,
@@ -3229,7 +3228,7 @@ function setupEvents(): void {
   });
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+function setupProfileName(): void {
   const nameInput = document.getElementById("nameInput") as HTMLInputElement | null;
   if (nameInput) {
     nameInput.value = loadProfileName();
@@ -3240,7 +3239,7 @@ document.addEventListener("DOMContentLoaded", () => {
       saveProfileName(value);
     });
   }
-});
+}
 
 const LEAVING_NOTE_STORAGE_KEY = "gdm:leavingNoteLog";
 const LEAVING_REMINDER_HOUR = 16;
@@ -3318,7 +3317,7 @@ function renderLeavingNoteCard(clearStatus = true) {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+function setupLeavingNoteEvents(): void {
   renderLeavingNoteCard();
   const form = document.getElementById("leavingNoteForm");
   const input = document.getElementById("leavingNoteInput") as HTMLTextAreaElement | null;
@@ -3348,9 +3347,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   // 16:00以降の強調を毎分チェック
   setInterval(renderLeavingNoteCard, 60 * 1000);
-});
+}
 
-function init(): void {
+export function initLegacyApp(): void {
   const locationSelect = getElementByIdOrThrow<HTMLSelectElement>("locationSelect");
   const savedLocationState = loadSavedLocationState();
   if (savedLocationState.mode === "custom") {
@@ -3371,6 +3370,9 @@ function init(): void {
   }
 
   setTodayLabel();
+  setupProfileName();
+  setupLeavingNoteEvents();
+  drawFortune();
   renderMoonPhase();
   renderLuckyBoxCard();
   currentMoodLog = loadMoodLog();
@@ -3391,5 +3393,3 @@ function init(): void {
   void loadDailyBuddy();
   void loadDailyReadings();
 }
-
-init();

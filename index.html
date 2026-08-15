@@ -4,10 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GDM</title>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/main.tsx"></script>
   </head>
   <body id="appBody" class="min-h-screen text-slate-800 bg-sky-soft transition-colors duration-700">
-    <main class="max-w-6xl mx-auto px-4 py-8">
+    <div id="root"></div>
+    <main id="legacyApp" class="max-w-6xl mx-auto px-4 py-8">
       <header class="text-center mb-8 animate-float-up">
         <p id="todayLabel" class="text-sm md:text-base text-slate-500 mb-2"></p>
         <h1 class="text-3xl md:text-5xl font-bold tracking-tight">
@@ -18,7 +19,7 @@
         </p>
       </header>
 
-      <section class="max-w-xl mx-auto mb-6 rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+      <section id="profileSetupCard" class="max-w-xl mx-auto mb-6 rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
         <form id="nameForm" class="space-y-4">
           <div>
             <label for="locationSelect" class="block text-sm text-slate-600 mb-2">場所を選ぶ</label>
@@ -364,12 +365,12 @@
             <p id="buddyStatus" class="mt-2 text-xs text-slate-500">本日の相棒を準備中です...</p>
           </section>
 
-          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+          <section id="quoteCard" class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
             <h2 class="text-xl font-bold mb-3">名言</h2>
             <p id="quoteText" class="leading-relaxed text-slate-700 text-base md:text-lg"></p>
           </section>
 
-          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+          <section id="onThisDayCard" class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
             <h2 class="text-xl font-bold mb-3">今日は何の日</h2>
             <p class="text-xs text-slate-500 mb-3">データソース: Wikimedia</p>
             <p id="onThisDayText" class="leading-relaxed text-slate-700 text-base md:text-lg">
@@ -407,7 +408,7 @@
         </div>
 
         <div class="lg:col-span-1 space-y-6">
-          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+          <section id="weatherCard" class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-xl font-bold">今日の天気</h2>
               <span id="weatherEmoji" class="text-3xl animate-drift">⛅</span>
@@ -590,7 +591,7 @@
             </div>
           </section>
 
-          <section class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
+          <section id="leavingCommentCard" class="rounded-3xl bg-white/80 backdrop-blur shadow-xl p-6 animate-float-up">
             <h2 class="text-xl font-bold mb-3">帰りのひとこと</h2>
             <p id="weatherComment" class="leading-relaxed text-slate-700">
               読み込み中...
@@ -600,7 +601,7 @@
             <div class="flex items-center justify-between mb-4">
               <div class="flex items-center gap-2">
                 <span id="leavingNoteIcon" class="text-2xl">📝</span>
-                <h2 id="leavingNoteTitle" class="text-xl font-bold">明日へのメッセージ</h2>
+                <h2 id="leavingNoteTitle" class="text-xl font-bold">昨日の一言・明日へのメッセージ</h2>
               </div>
               <span id="leavingNotePulse" class="hidden text-lg text-amber-500 font-bold animate-pulse">⏰</span>
             </div>

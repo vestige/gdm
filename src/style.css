@@ -298,3 +298,16 @@
 #leavingNoteCard:focus-within .leaving-note-icon-highlight {
   filter: none;
 }
+
+#legacyApp.react-shell-active {
+  display: none;
+}
+
+.legacy-card-host > section {
+  width: 100%;
+  height: 100%;
+}
+
+.information-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
