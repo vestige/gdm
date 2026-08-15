@@ -7,8 +7,8 @@ import LegacySectionHost from "../components/LegacySectionHost";
 const informationCards: InformationCardDefinition[] = [
   { id: "weather", title: "天気", description: "現在地・設定地点の予報", icon: "☀️", summary: { selectors: ["#currentTemp", "#weatherStatus"], fallback: "天気を確認" }, action: { type: "modal", targetIds: ["weatherCard"] } },
   { id: "outfit", title: "服装・ファッション", description: "天気に合わせた提案と情報", icon: "🧥", summary: { selectors: ["#outfitSummary", "#fashionInfoLead"], fallback: "今日の服装とファッション情報" }, action: { type: "modal", targetIds: ["outfitCard", "fashionInfoCard"] } },
-  { id: "english", title: "English", description: "今日のひとこと", icon: "💬", summary: { selectors: ["#dailyEnglishPhrase"], fallback: "今日の英語を確認" }, action: { type: "route", path: "/english" } },
-  { id: "reading", title: "Reading", description: "朝の読み物", icon: "📚", summary: { selectors: ["#cozyReadingTitle"], fallback: "今日の記事を確認" }, action: { type: "route", path: "/reading" } },
+  { id: "english", title: "English", description: "今日のひとこと", icon: "💬", summary: { selectors: ["#dailyEnglishPhrase"], fallback: "今日の英語を確認" }, action: { type: "modal", targetIds: ["dailyEnglishCard"] } },
+  { id: "reading", title: "Reading", description: "朝の読み物", icon: "📚", summary: { selectors: ["#cozyReadingTitle", "#techReadingTitle"], fallback: "今日の記事を確認" }, action: { type: "modal", targetIds: ["cozyReadingCard", "techReadingCard"] } },
   { id: "buddy", title: "今日の相棒", description: "朝にほっとできる一枚", icon: "🐾", summary: { selectors: ["#buddyMessage"], fallback: "今日の相棒を見る" }, action: { type: "modal", targetIds: ["dailyBuddyCard"] } },
   { id: "moon", title: "月の状態", description: "今夜の空", icon: "🌙", summary: { selectors: ["#moonPhaseName", "#moonAge"], fallback: "今日の月を確認" }, action: { type: "modal", targetIds: ["moonCard"] } },
   { id: "challenge", title: "ミニチャレンジ", description: "毎日ひとつ", icon: "🌱", summary: { selectors: ["#miniChallengeText"], fallback: "今日の小さな挑戦" }, action: { type: "modal", targetIds: ["miniChallengeCard"] } },
