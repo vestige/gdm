@@ -9,7 +9,6 @@ const informationCards: InformationCardDefinition[] = [
   { id: "outfit", title: "服装・ファッション", description: "天気に合わせた提案と情報", icon: "🧥", summary: { selectors: ["#outfitSummary", "#fashionInfoLead"], fallback: "今日の服装とファッション情報" }, action: { type: "modal", targetIds: ["outfitCard", "fashionInfoCard"] } },
   { id: "english", title: "English", description: "今日のひとこと", icon: "💬", summary: { selectors: ["#dailyEnglishPhrase"], fallback: "今日の英語を確認" }, action: { type: "route", path: "/english" } },
   { id: "reading", title: "Reading", description: "朝の読み物", icon: "📚", summary: { selectors: ["#cozyReadingTitle"], fallback: "今日の記事を確認" }, action: { type: "route", path: "/reading" } },
-  { id: "mood-history", title: "気分の履歴", description: "直近7日分", icon: "📊", summary: { selectors: ["#moodStatus"], fallback: "最近の気分を振り返る" }, action: { type: "route", path: "/mood" } },
   { id: "buddy", title: "今日の相棒", description: "朝にほっとできる一枚", icon: "🐾", summary: { selectors: ["#buddyMessage"], fallback: "今日の相棒を見る" }, action: { type: "modal", targetIds: ["dailyBuddyCard"] } },
   { id: "moon", title: "月の状態", description: "今夜の空", icon: "🌙", summary: { selectors: ["#moonPhaseName", "#moonAge"], fallback: "今日の月を確認" }, action: { type: "modal", targetIds: ["moonCard"] } },
   { id: "challenge", title: "ミニチャレンジ", description: "毎日ひとつ", icon: "🌱", summary: { selectors: ["#miniChallengeText"], fallback: "今日の小さな挑戦" }, action: { type: "modal", targetIds: ["miniChallengeCard"] } },

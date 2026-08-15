@@ -245,6 +245,16 @@
   transform: scale(1.02);
 }
 
+.information-modal[data-card-id="buddy"] #buddyImage {
+  height: auto;
+  max-height: 65vh;
+  object-fit: contain;
+}
+
+.information-modal[data-card-id="buddy"] #dailyBuddyCard:hover .buddy-image-visible {
+  transform: none;
+}
+
 .buddy-type-button-active {
   background-color: #ffffff;
   color: #1f2937;
