@@ -6,6 +6,7 @@ import {
   luckyBoxNormalResults,
   luckyBoxRareResult,
   luckyColors,
+  miniChallengeCategories,
   quotes,
   type LuckyBoxResult
 } from "./data";
@@ -1039,6 +1040,12 @@ async function searchCustomLocation(query: string): Promise<OfficeLocation> {
   throw new Error("場所が見つかりませんでした");
 }
 
+function getTodayMiniChallenge(): { category: string; text: string } {
+  const category = pickBySeed(miniChallengeCategories, getTodaySeed("mini-challenge-category"), 13);
+  const text = pickBySeed(category.challenges, getTodaySeed(`mini-challenge-${category.category}`), 7);
+  return { category: category.category, text };
+}
+
 function loadLuckyBoxLog(): LuckyBoxLog {
   try {
     const stored = localStorage.getItem(LUCKY_BOX_LOG_STORAGE_KEY);
@@ -1168,6 +1175,12 @@ function getActiveMoodHistory(): MoodHistory {
   }
 
   return currentMoodLog[activeProfileName] ?? {};
+}
+
+function renderMiniChallenge(): void {
+  const miniChallenge = getTodayMiniChallenge();
+  getElementByIdOrThrow<HTMLElement>("miniChallengeCategory").textContent = miniChallenge.category;
+  getElementByIdOrThrow<HTMLElement>("miniChallengeText").textContent = miniChallenge.text;
 }
 
 function getLuckyBoxButtons(): HTMLButtonElement[] {
@@ -3058,6 +3071,7 @@ function showMorningCards(): void {
 
   activeProfileName = submittedName;
   drawFortune();
+  renderMiniChallenge();
   renderLuckyBoxCard();
   renderMoonPhase();
   renderMoodSection();
@@ -3373,6 +3387,7 @@ export function initLegacyApp(): void {
   setupProfileName();
   setupLeavingNoteEvents();
   drawFortune();
+  renderMiniChallenge();
   renderMoonPhase();
   renderLuckyBoxCard();
   currentMoodLog = loadMoodLog();
