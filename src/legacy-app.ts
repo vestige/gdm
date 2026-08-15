@@ -245,10 +245,12 @@ const cozyReadingSources: ReadingSource[] = [
 ];
 
 const techReadingSources: ReadingSource[] = [
-  { source: "CodeZine", url: "https://codezine.jp/rss/new/20/index.xml" },
-  { source: "DevelopersIO", url: "https://dev.classmethod.jp/feed/" },
-  { source: "Qiita", url: "https://qiita.com/popular-items/feed.atom" }
+  { source: "宙畑", url: "https://sorabatake.jp/feed/" },
+  { source: "sorae", url: "https://sorae.info/feed" },
+  { source: "CodeZine", url: "https://codezine.jp/rss/new/20/index.xml" }
 ];
+
+const activeTechReadingSources = new Set(techReadingSources.map(({ source }) => source));
 
 const excludedReadingKeywords = [
   "事件",
@@ -281,6 +283,16 @@ const cozyPriorityKeywords = [
 ];
 
 const techPriorityKeywords = [
+  "宇宙",
+  "衛星",
+  "ロケット",
+  "月",
+  "惑星",
+  "天文",
+  "地球観測",
+  "衛星データ",
+  "space",
+  "satellite",
   "aws",
   "cloud",
   "javascript",
@@ -320,22 +332,22 @@ const cozyReadingFallbackItems: ReadingItem[] = [
 
 const techReadingFallbackItems: ReadingItem[] = [
   {
-    title: "CodeZine の新着記事をチェック",
+    title: "宙畑で宇宙ビジネスと衛星データの記事を読む",
+    url: "https://sorabatake.jp/",
+    source: "宙畑",
+    description: "宇宙ビジネスや衛星データの活用事例を日本語で読みやすいメディアです。"
+  },
+  {
+    title: "soraeで最新の宇宙ニュースをチェック",
+    url: "https://sorae.info/",
+    source: "sorae",
+    description: "天文、ロケット、探査ミッションなどの宇宙ニュースを確認できます。"
+  },
+  {
+    title: "CodeZineで開発トピックもチェック",
     url: "https://codezine.jp/",
     source: "CodeZine",
-    description: "開発者向けの最新トピックを幅広く追いやすい国内メディアです。"
-  },
-  {
-    title: "DevelopersIO の最新記事を読む",
-    url: "https://dev.classmethod.jp/",
-    source: "DevelopersIO",
-    description: "AWS や実装ノウハウの記事が多く、現場寄りの学びを得やすいです。"
-  },
-  {
-    title: "Qiita 人気記事から話題を拾う",
-    url: "https://qiita.com/popular-items",
-    source: "Qiita",
-    description: "その日の注目トピックを短時間で把握しやすい人気記事フィードです。"
+    description: "宇宙分野とあわせて、開発者向けの最新技術も確認できます。"
   }
 ];
 
@@ -1884,7 +1896,7 @@ function loadDailyReadingLog(): DailyReadingLog {
 
     const nextLog: DailyReadingLog = {};
     for (const [dateKey, entry] of Object.entries(parsed)) {
-      if (isDailyReadingEntry(entry)) {
+      if (isDailyReadingEntry(entry) && activeTechReadingSources.has(entry.tech.source)) {
         nextLog[dateKey] = entry;
       }
     }
