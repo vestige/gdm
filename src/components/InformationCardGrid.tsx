@@ -9,6 +9,7 @@ type InformationCardGridProps = {
 };
 
 function readSummary(definition: InformationCardDefinition): string {
+  if ("text" in definition.summary) return definition.summary.text;
   const values = definition.summary.selectors
     .map((selector) => document.querySelector<HTMLElement>(selector)?.textContent?.trim())
     .filter((value): value is string => Boolean(value && value !== "---" && !value.includes("読み込み中")));
@@ -26,6 +27,7 @@ export default function InformationCardGrid({ definitions }: InformationCardGrid
     const update = () => setSummaries(Object.fromEntries(definitions.map((definition) => [definition.id, readSummary(definition)])));
     const observer = new MutationObserver(update);
     definitions.forEach((definition) => {
+      if ("text" in definition.summary) return;
       definition.summary.selectors.forEach((selector) => {
         const target = document.querySelector(selector);
         if (target) observer.observe(target, { childList: true, characterData: true, subtree: true });
@@ -44,7 +46,7 @@ export default function InformationCardGrid({ definitions }: InformationCardGrid
     <>
       <div className="information-card-grid grid gap-4">
         {definitions.map((definition) => (
-          <InformationCard key={definition.id} definition={definition} summary={summaries[definition.id] ?? definition.summary.fallback} onSelect={selectCard} />
+          <InformationCard key={definition.id} definition={definition} summary={summaries[definition.id] ?? ("text" in definition.summary ? definition.summary.text : definition.summary.fallback)} onSelect={selectCard} />
         ))}
       </div>
       <InformationModal definition={activeModal} onClose={() => setActiveModal(null)} />

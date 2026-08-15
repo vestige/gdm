@@ -27,7 +27,8 @@ export default function InformationModal({ definition, onClose }: InformationMod
           <button type="button" onClick={onClose} className="rounded-full bg-white px-3 py-2 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-100" aria-label="閉じる">✕</button>
         </div>
         <div className="grid gap-4">
-          {definition.action.targetIds.map((targetId) => <LegacySectionHost key={targetId} targetId={targetId} />)}
+          {definition.action.content}
+          {definition.action.targetIds?.map((targetId) => <LegacySectionHost key={targetId} targetId={targetId} />)}
         </div>
       </div>
     </div>

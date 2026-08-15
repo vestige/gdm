@@ -1,12 +1,7 @@
-import { dailyEnglishCards, type DailyEnglishCard } from "./english-data";
 import {
-  fortunes,
-  luckyActions,
   luckyBoxMissResults,
   luckyBoxNormalResults,
   luckyBoxRareResult,
-  luckyColors,
-  miniChallengeCategories,
   quotes,
   type LuckyBoxResult
 } from "./data";
@@ -71,12 +66,6 @@ type DailyReadingEntry = {
   tech: ReadingItem;
 };
 type DailyReadingLog = Record<string, DailyReadingEntry>;
-type DailyEnglishRotationState = {
-  version: number;
-  dateKey: string;
-  order: number[];
-  position: number;
-};
 type ReadingSource = {
   source: string;
   url: string;
@@ -169,7 +158,6 @@ const NAME_STORAGE_KEY = "gdm:profileName";
 const LUCKY_BOX_LOG_STORAGE_KEY = "gdm:luckyBoxLog";
 const OUTFIT_PROFILE_STORAGE_KEY = "gdm:outfitProfile";
 const FASHION_MODE_STORAGE_KEY = "gdm:fashionMode";
-const DAILY_ENGLISH_ROTATION_STORAGE_KEY = "gdm:dailyEnglishRotation";
 const GSI_GEOCODING_API_ENDPOINT = "https://msearch.gsi.go.jp/address-search/AddressSearch";
 const GEOCODING_API_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
 const TRANSLATE_API_BASE_URL = "https://api.mymemory.translated.net/get";
@@ -182,7 +170,6 @@ const BUDDY_PREFERENCE_STORAGE_KEY = "gdm:buddyPreference";
 const DAILY_READING_LOG_STORAGE_KEY = "gdm:dailyReadingLog";
 const CURRENT_WEATHER_LABEL = "現在地周辺";
 const DEFAULT_PROFILE_NAME = "匿名さん";
-const DAILY_ENGLISH_ROTATION_VERSION = 1;
 let latestQuoteText = "";
 let currentMoodLog: MoodLog = {};
 let currentLuckyBoxEntry: LuckyBoxEntry | null = null;
@@ -479,32 +466,6 @@ function pickBySeed<T>(array: T[], seed: number, offset = 0): T {
   return array[(seed + offset) % array.length];
 }
 
-function getDayDifference(fromDateKey: string, toDateKey: string): number {
-  const from = new Date(`${fromDateKey}T00:00:00`);
-  const to = new Date(`${toDateKey}T00:00:00`);
-  const difference = Math.floor((to.getTime() - from.getTime()) / 86_400_000);
-  return Number.isFinite(difference) ? Math.max(0, difference) : 0;
-}
-
-function shuffleNumberRange(length: number, avoidFirstIndex?: number): number[] {
-  const values = Array.from({ length }, (_, index) => index);
-
-  for (let index = values.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [values[index], values[swapIndex]] = [values[swapIndex], values[index]];
-  }
-
-  if (
-    typeof avoidFirstIndex === "number" &&
-    values.length > 1 &&
-    values[0] === avoidFirstIndex
-  ) {
-    [values[0], values[1]] = [values[1], values[0]];
-  }
-
-  return values;
-}
-
 function isMoodLevel(value: unknown): value is MoodLevel {
   return Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5;
 }
@@ -523,20 +484,6 @@ function isOutfitDay(value: string): value is OutfitDay {
 
 function isFashionMode(value: string): value is FashionMode {
   return value === "commute" || value === "casual" || value === "trend";
-}
-
-function isDailyEnglishRotationState(value: unknown): value is DailyEnglishRotationState {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return false;
-  }
-
-  const candidate = value as Partial<DailyEnglishRotationState>;
-  return (
-    typeof candidate.version === "number" &&
-    typeof candidate.dateKey === "string" &&
-    Array.isArray(candidate.order) &&
-    typeof candidate.position === "number"
-  );
 }
 
 function isLuckyBoxResult(value: unknown): value is LuckyBoxResult {
@@ -671,125 +618,6 @@ function setFashionModeButtons(mode: FashionMode): void {
     button.setAttribute("aria-pressed", String(isSelected));
     button.classList.toggle("buddy-type-button-active", isSelected);
   });
-}
-
-function createDailyEnglishRotationState(dateKey: string, avoidFirstIndex?: number): DailyEnglishRotationState {
-  return {
-    version: DAILY_ENGLISH_ROTATION_VERSION,
-    dateKey,
-    order: shuffleNumberRange(dailyEnglishCards.length, avoidFirstIndex),
-    position: 0
-  };
-}
-
-function saveDailyEnglishRotationState(state: DailyEnglishRotationState): boolean {
-  try {
-    localStorage.setItem(DAILY_ENGLISH_ROTATION_STORAGE_KEY, JSON.stringify(state));
-    return true;
-  } catch (error) {
-    console.warn("英語カードのローテーション保存に失敗しました", error);
-    return false;
-  }
-}
-
-function isValidDailyEnglishOrder(order: number[]): boolean {
-  if (order.length !== dailyEnglishCards.length) {
-    return false;
-  }
-
-  const uniqueValues = new Set(order);
-  if (uniqueValues.size !== dailyEnglishCards.length) {
-    return false;
-  }
-
-  return order.every((value) => Number.isInteger(value) && value >= 0 && value < dailyEnglishCards.length);
-}
-
-function advanceDailyEnglishRotationState(
-  state: DailyEnglishRotationState,
-  dayCount: number
-): DailyEnglishRotationState {
-  if (dayCount <= 0) {
-    return state;
-  }
-
-  let order = [...state.order];
-  let position = state.position;
-
-  for (let count = 0; count < dayCount; count += 1) {
-    if (position < order.length - 1) {
-      position += 1;
-      continue;
-    }
-
-    const previousLastIndex = order[position];
-    order = shuffleNumberRange(dailyEnglishCards.length, previousLastIndex);
-    position = 0;
-  }
-
-  return {
-    ...state,
-    order,
-    position
-  };
-}
-
-function loadDailyEnglishRotationState(): {
-  state: DailyEnglishRotationState;
-  didPersist: boolean;
-} {
-  const todayKey = getLocalDateKey();
-  const fallbackState = createDailyEnglishRotationState(todayKey);
-
-  try {
-    const raw = localStorage.getItem(DAILY_ENGLISH_ROTATION_STORAGE_KEY);
-    if (!raw) {
-      return {
-        state: fallbackState,
-        didPersist: saveDailyEnglishRotationState(fallbackState)
-      };
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-    if (!isDailyEnglishRotationState(parsed)) {
-      return {
-        state: fallbackState,
-        didPersist: saveDailyEnglishRotationState(fallbackState)
-      };
-    }
-
-    if (
-      parsed.version !== DAILY_ENGLISH_ROTATION_VERSION ||
-      !Number.isInteger(parsed.position) ||
-      parsed.position < 0 ||
-      parsed.position >= parsed.order.length ||
-      !isValidDailyEnglishOrder(parsed.order)
-    ) {
-      return {
-        state: fallbackState,
-        didPersist: saveDailyEnglishRotationState(fallbackState)
-      };
-    }
-
-    const dayDifference = getDayDifference(parsed.dateKey, todayKey);
-    const nextState = dayDifference > 0
-      ? {
-          ...advanceDailyEnglishRotationState(parsed, dayDifference),
-          dateKey: todayKey
-        }
-      : parsed;
-
-    return {
-      state: nextState,
-      didPersist: dayDifference > 0 ? saveDailyEnglishRotationState(nextState) : true
-    };
-  } catch (error) {
-    console.warn("英語カードのローテーション読み込みに失敗しました", error);
-    return {
-      state: fallbackState,
-      didPersist: saveDailyEnglishRotationState(fallbackState)
-    };
-  }
 }
 
 function renderWeatherLocationControls(): void {
@@ -1052,12 +880,6 @@ async function searchCustomLocation(query: string): Promise<OfficeLocation> {
   throw new Error("場所が見つかりませんでした");
 }
 
-function getTodayMiniChallenge(): { category: string; text: string } {
-  const category = pickBySeed(miniChallengeCategories, getTodaySeed("mini-challenge-category"), 13);
-  const text = pickBySeed(category.challenges, getTodaySeed(`mini-challenge-${category.category}`), 7);
-  return { category: category.category, text };
-}
-
 function loadLuckyBoxLog(): LuckyBoxLog {
   try {
     const stored = localStorage.getItem(LUCKY_BOX_LOG_STORAGE_KEY);
@@ -1187,12 +1009,6 @@ function getActiveMoodHistory(): MoodHistory {
   }
 
   return currentMoodLog[activeProfileName] ?? {};
-}
-
-function renderMiniChallenge(): void {
-  const miniChallenge = getTodayMiniChallenge();
-  getElementByIdOrThrow<HTMLElement>("miniChallengeCategory").textContent = miniChallenge.category;
-  getElementByIdOrThrow<HTMLElement>("miniChallengeText").textContent = miniChallenge.text;
 }
 
 function getLuckyBoxButtons(): HTMLButtonElement[] {
@@ -1567,31 +1383,6 @@ function revealResults(): void {
     void element.offsetWidth;
     element.style.animation = "";
   });
-}
-
-function replayCardAnimation(element: HTMLElement): void {
-  element.classList.remove("animate-glow-soft");
-  void element.offsetWidth;
-  element.classList.add("animate-glow-soft");
-}
-
-function drawFortune(): void {
-  const nameInput = getElementByIdOrThrow<HTMLInputElement>("nameInput");
-  const profileName = normalizeProfileName(nameInput.value) || activeProfileName || DEFAULT_PROFILE_NAME;
-  const seed = getTodaySeed(profileName);
-
-  const fortune = pickBySeed(fortunes, seed, 1);
-  const color = pickBySeed(luckyColors, seed, 3);
-  const action = pickBySeed(luckyActions, seed, 5);
-  const fallbackQuote = pickBySeed(quotes, seed, 7);
-
-  getElementByIdOrThrow<HTMLElement>("fortuneRank").textContent = fortune.rank;
-  getElementByIdOrThrow<HTMLElement>("fortuneMessage").textContent = fortune.message;
-  getElementByIdOrThrow<HTMLElement>("luckyColor").textContent = color;
-  getElementByIdOrThrow<HTMLElement>("luckyAction").textContent = action;
-  getElementByIdOrThrow<HTMLElement>("quoteText").textContent = latestQuoteText || fallbackQuote;
-
-  replayCardAnimation(getElementByIdOrThrow<HTMLElement>("fortuneCard"));
 }
 
 function isBuddyType(value: unknown): value is BuddyType {
@@ -2158,51 +1949,6 @@ async function loadDailyReadings(forceRefresh = false): Promise<void> {
     renderReadingCard("cozy", cozy, "フォールバック記事を表示しています");
     renderReadingCard("tech", tech, "フォールバック記事を表示しています");
   }
-}
-
-function getDailyEnglishLevelLabel(level: DailyEnglishCard["level"]): string {
-  return level === "easy" ? "やさしめ" : "ふつう";
-}
-
-function setDailyEnglishLoadingState(message = "今日の英語を準備しています..."): void {
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishStatus").textContent = message;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishCategory").textContent = "---";
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishLevel").textContent = "---";
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishPhrase").textContent = "読み込み中...";
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishPhraseJa").textContent = "";
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishScene").textContent = "";
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishReply").textContent = "---";
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishReplyJa").textContent = "";
-}
-
-function renderDailyEnglishCard(card: DailyEnglishCard, statusText: string): void {
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishStatus").textContent = statusText;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishCategory").textContent = card.category;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishLevel").textContent = getDailyEnglishLevelLabel(card.level);
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishPhrase").textContent = card.phrase;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishPhraseJa").textContent = card.phraseJa;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishScene").textContent = `使う場面: ${card.scene}`;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishReply").textContent = card.reply;
-  getElementByIdOrThrow<HTMLElement>("dailyEnglishReplyJa").textContent = card.replyJa;
-}
-
-function loadDailyEnglishCard(): void {
-  setDailyEnglishLoadingState();
-
-  const { state, didPersist } = loadDailyEnglishRotationState();
-  const card = dailyEnglishCards[state.order[state.position]] ?? dailyEnglishCards[0];
-
-  if (!card) {
-    getElementByIdOrThrow<HTMLElement>("dailyEnglishStatus").textContent = "英語カードを準備できませんでした";
-    return;
-  }
-
-  renderDailyEnglishCard(
-    card,
-    didPersist
-      ? "毎日1つずつランダムに入れ替わります"
-      : "保存できないため、再読み込みで変わる場合があります"
-  );
 }
 
 function formatOptionalMetric(value: number | undefined, suffix: string): string {
@@ -3082,8 +2828,6 @@ function showMorningCards(): void {
   const submittedName = normalizeProfileName(nameInput.value) || DEFAULT_PROFILE_NAME;
 
   activeProfileName = submittedName;
-  drawFortune();
-  renderMiniChallenge();
   renderLuckyBoxCard();
   renderMoonPhase();
   renderMoodSection();
@@ -3263,6 +3007,7 @@ function setupProfileName(): void {
       const value = (e.target as HTMLInputElement).value.trim();
       activeProfileName = value;
       saveProfileName(value);
+      window.dispatchEvent(new Event("gdm:profile-name-change"));
     });
   }
 }
@@ -3398,8 +3143,6 @@ export function initLegacyApp(): void {
   setTodayLabel();
   setupProfileName();
   setupLeavingNoteEvents();
-  drawFortune();
-  renderMiniChallenge();
   renderMoonPhase();
   renderLuckyBoxCard();
   currentMoodLog = loadMoodLog();
@@ -3416,7 +3159,6 @@ export function initLegacyApp(): void {
   void loadWeather();
   void loadQuote();
   void loadOnThisDay();
-  loadDailyEnglishCard();
   void loadDailyBuddy();
   void loadDailyReadings();
 }

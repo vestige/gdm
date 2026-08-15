@@ -1,20 +1,27 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import DailyEnglishCard from "../components/DailyEnglishCard";
+import FortuneCard from "../components/FortuneCard";
 import InformationCardGrid from "../components/InformationCardGrid";
 import InformationModal from "../components/InformationModal";
 import type { InformationCardDefinition } from "../components/information-card-types";
 import LegacySectionHost from "../components/LegacySectionHost";
+import MiniChallengeCard from "../components/MiniChallengeCard";
+import { getDailyChallenge } from "../features/daily-content";
+import { getDailyEnglishSelection } from "../features/daily-english";
 
-const informationCards: InformationCardDefinition[] = [
+function createInformationCards(challengeText: string, englishPhrase: string): InformationCardDefinition[] {
+  return [
   { id: "weather", title: "天気", description: "現在地・設定地点の予報", icon: "☀️", summary: { selectors: ["#currentTemp", "#weatherStatus"], fallback: "天気を確認" }, action: { type: "modal", targetIds: ["weatherCard"] } },
   { id: "outfit", title: "服装・ファッション", description: "天気に合わせた提案と情報", icon: "🧥", summary: { selectors: ["#outfitSummary", "#fashionInfoLead"], fallback: "今日の服装とファッション情報" }, action: { type: "modal", targetIds: ["outfitCard", "fashionInfoCard"] } },
-  { id: "english", title: "English", description: "今日のひとこと", icon: "💬", summary: { selectors: ["#dailyEnglishPhrase"], fallback: "今日の英語を確認" }, action: { type: "modal", targetIds: ["dailyEnglishCard"] } },
+  { id: "english", title: "English", description: "今日のひとこと", icon: "💬", summary: { text: englishPhrase }, action: { type: "modal", content: <DailyEnglishCard /> } },
   { id: "reading", title: "Reading", description: "朝の読み物", icon: "📚", summary: { selectors: ["#cozyReadingTitle", "#techReadingTitle"], fallback: "今日の記事を確認" }, action: { type: "modal", targetIds: ["cozyReadingCard", "techReadingCard"] } },
   { id: "buddy", title: "今日の相棒", description: "朝にほっとできる一枚", icon: "🐾", summary: { selectors: ["#buddyMessage"], fallback: "今日の相棒を見る" }, action: { type: "modal", targetIds: ["dailyBuddyCard"] } },
   { id: "moon", title: "月の状態", description: "今夜の空", icon: "🌙", summary: { selectors: ["#moonPhaseName", "#moonAge"], fallback: "今日の月を確認" }, action: { type: "modal", targetIds: ["moonCard"] } },
-  { id: "challenge", title: "ミニチャレンジ", description: "毎日ひとつ", icon: "🌱", summary: { selectors: ["#miniChallengeText"], fallback: "今日の小さな挑戦" }, action: { type: "modal", targetIds: ["miniChallengeCard"] } },
+  { id: "challenge", title: "ミニチャレンジ", description: "毎日ひとつ", icon: "🌱", summary: { text: challengeText }, action: { type: "modal", content: <MiniChallengeCard /> } },
   { id: "quote", title: "今日の名言", icon: "✨", summary: { selectors: ["#quoteText"], fallback: "今日の言葉を読む" }, action: { type: "modal", targetIds: ["quoteCard"] } },
   { id: "on-this-day", title: "今日は何の日", icon: "📅", summary: { selectors: ["#onThisDayText"], fallback: "今日のできごと" }, action: { type: "modal", targetIds: ["onThisDayCard"] } }
-];
+  ];
+}
 
 const settingsCard: InformationCardDefinition = {
   id: "settings",
@@ -27,6 +34,9 @@ const settingsCard: InformationCardDefinition = {
 export default function DashboardPage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [english] = useState(getDailyEnglishSelection);
+  const challenge = useMemo(getDailyChallenge, []);
+  const informationCards = useMemo(() => createInformationCards(challenge.text, english.card.phrase), [challenge.text, english.card.phrase]);
   const today = new Date().toLocaleDateString("ja-JP", {
     year: "numeric",
     month: "long",
@@ -77,7 +87,7 @@ export default function DashboardPage() {
         <p className="text-xs font-bold tracking-widest text-indigo-500">FOR YOU</p>
         <h2 id="morning-dashboard-title" className="mb-5 mt-1 text-2xl font-extrabold text-slate-900">今朝のダッシュボード</h2>
         <div className="grid items-start gap-5 lg:grid-cols-2">
-          <LegacySectionHost targetId="fortuneCard" />
+          <FortuneCard />
           <LegacySectionHost targetId="moodCard" />
           <LegacySectionHost targetId="leavingNoteCard" />
           <LegacySectionHost targetId="luckyBoxCard" />
